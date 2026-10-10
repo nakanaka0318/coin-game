@@ -1,31 +1,27 @@
 // Runs a long headless session until the pile reaches steady state, then
 // writes the medal layout used at the start of every run.
-//   node tools/bake-field.mjs [drops=420]
+//   node tools/bake-field.mjs [shots=600]
 import { writeFileSync } from 'node:fs';
-import RAPIER from '@dimforge/rapier3d-simd-compat';
-import { PhysicsWorld, KIND } from '../src/sim/physics.js';
-import { Game } from '../src/game/game.js';
-import { DROP } from '../src/sim/config.js';
+import { KIND } from '../src/sim/physics.js';
+import { makeGame, step, aimFor } from './bot.mjs';
 
-await RAPIER.init();
-const world = new PhysicsWorld(RAPIER);
-const game = new Game(world, { seed: 7 });
+const { world, game } = makeGame(7, { field: null });
 game.fillField();
 game.newFreePlay();
-game.stats.goldChance = 0;
 game.bank = 1e6;
-const drops = Number(process.argv[2] || 420);
-let t = 0, next = 0, n = 0;
-// Medals only, no slot rewards: keep the slot from firing during baking.
+const shots = Number(process.argv[2] || 600);
+// Medals only, no slot rewards: keep the slot quiet while baking.
 game._applyOutcome = () => {};
-while (n < drops) {
-  if (t >= next) { game.drop(game.rng.range(DROP.minX, DROP.maxX)); n++; next = t + 0.5; }
-  world.step(); game.update(1 / 60); t += 1 / 60;
+game._addStock = () => null;
+let t = 0, next = 0, n = 0;
+while (n < shots) {
+  if (t >= next) { game.setAim(aimFor(game, 'spread')); game.requestFire(); n++; next = t + 0.5; }
+  step(world, game);
+  t += 1 / 60;
 }
-// Let everything come to rest without new drops.
-for (let i = 0; i < 60 * 8; i++) { world.step(); game.update(1 / 60); }
+for (let i = 0; i < 60 * 8; i++) step(world, game);
 const snap = world.snapshot();
-snap.bodies = snap.bodies.filter((b) => b[0] !== KIND.BALL);
+snap.bodies = snap.bodies.filter((b) => b[0] !== KIND.BALL && b[2] > -0.5);
 if (!process.env.DRY) writeFileSync(new URL('../src/sim/initial-field.json', import.meta.url), JSON.stringify(snap));
-console.log('front paid', game.freeStats.paid, 'per drop', (game.freeStats.paid / drops).toFixed(2));
+console.log('paid', game.freeStats.paid, 'per shot', (game.freeStats.paid / shots).toFixed(2), 'catch', game.run.caught, '/', game.run.caught + game.run.missed);
 console.log('baked', snap.bodies.length, 'medals, phase', snap.phase);

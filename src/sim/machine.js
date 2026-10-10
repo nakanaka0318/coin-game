@@ -1,8 +1,7 @@
 // Static parts of the cabinet. Shared by the physics world (colliders)
 // and the renderer (meshes), so both always agree on the geometry.
 import {
-  HALF_W, FRONT_Z, SIDE_WALL_END_Z, BACK_WALL, STAGE, MAT,
-  stagePoint, stagePins,
+  HALF_W, FRONT_Z, SIDE_WALL_END_Z, BACK_WALL, STAGE, MAT, stagePoint,
 } from './config.js';
 
 function quatX(angle) {
@@ -14,18 +13,19 @@ const IDENTITY = [0, 0, 0, 1];
 export const CHECKER_POST_HALF = 0.5;
 export const CHECKER_POST_S = STAGE.length - 0.3;
 
-// Centre of a torii post standing upright on the stage near the lip.
-export function checkerPostPos(side, halfGap) {
-  const w = stagePoint(side * (halfGap + STAGE.checkerPostRadius), CHECKER_POST_S, 0);
+// Centre of a torii post standing upright on the stage near the lip, for a
+// torii centred on x = centerX.
+export function checkerPostPos(side, halfGap, centerX = 0) {
+  const w = stagePoint(centerX + side * (halfGap + STAGE.checkerPostRadius), CHECKER_POST_S, 0);
   return { x: w.x, y: w.y + CHECKER_POST_HALF - 0.05, z: w.z };
 }
+
+export { quatX };
 
 export function buildMachineParts() {
   const parts = [];
   const box = (name, pos, half, opts = {}) =>
     parts.push({ shape: 'box', name, pos, half, quat: opts.quat || IDENTITY, mat: MAT.METAL, friction: 0.3, restitution: 0.1, ...opts });
-  const cyl = (name, pos, radius, halfHeight, opts = {}) =>
-    parts.push({ shape: 'cyl', name, pos, radius, halfHeight, quat: opts.quat || IDENTITY, mat: MAT.PIN, friction: 0.2, restitution: 0.35, ...opts });
 
   const backZ = -14;
   // Lower field, running under the pusher.
@@ -58,17 +58,7 @@ export function buildMachineParts() {
   // Back board behind the stage.
   box('stageBack', [0, 8.5, STAGE.top.z - 0.4], [HALF_W, 4.5, 0.4], { mat: MAT.WOOD, friction: 0.05, slick: true });
 
-  // Pins, perpendicular to the stage surface.
-  for (const p of stagePins()) {
-    const w = stagePoint(p.x, p.s, STAGE.pinHeight / 2);
-    cyl('pin', [w.x, w.y, w.z], STAGE.pinRadius, STAGE.pinHeight / 2, { quat: q, friction: 0.05, slick: true });
-  }
-
-  // Checker gate (the torii) at the lip: two upright posts.
-  for (const side of [-1, 1]) {
-    const w = checkerPostPos(side, STAGE.checkerHalfGap);
-    cyl('checkerPost', [w.x, w.y, w.z], STAGE.checkerPostRadius, CHECKER_POST_HALF, { restitution: 0.3, friction: 0.05, slick: true });
-  }
+  // Pins and the torii posts are kinematic movers built in physics.js.
 
   // Front glass. Keeps medals from flying at the player during payout rain.
   box('glass', [0, 6.3, FRONT_Z + 0.75], [HALF_W + 0.6, 4.6, 0.05], { mat: MAT.GLASS, friction: 0.1, visual: false });

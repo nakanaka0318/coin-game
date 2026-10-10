@@ -771,3 +771,139 @@ kbd {
 
 .item .rar { white-space: nowrap; }
 .item .reason { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+/* ---------- v2: fever, volume, touch controls, shrine ---------- */
+.fever-chip {
+  align-self: center;
+  font-family: var(--font-display);
+  font-size: 15px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #2a0a04;
+  background: linear-gradient(90deg, #ffd34a, #ff7a4a, #ffd34a);
+  background-size: 200% 100%;
+  animation: fever 1.2s linear infinite;
+  white-space: nowrap;
+}
+
+@keyframes fever { to { background-position: -200% 0; } }
+
+.settings {
+  display: grid;
+  gap: 10px;
+  margin: 16px auto 0;
+  max-width: 380px;
+  text-align: left;
+}
+
+.vol {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr) 2.5em;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.vol output { text-align: right; color: var(--text); }
+
+.vol input[type="range"] {
+  width: 100%;
+  accent-color: var(--gold);
+  height: 28px;
+}
+
+.controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  display: none;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.touch .controls { display: flex; }
+.controls[hidden] { display: none !important; }
+
+.aim-track {
+  position: relative;
+  flex: 1;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(10, 12, 36, 0.72);
+  border: 1px solid var(--line);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.aim-line {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 50%;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 8px, transparent 8px 14px);
+}
+
+.aim-knob {
+  position: absolute;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin-left: -22px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff6d8, var(--gold) 55%, #a7782a);
+  box-shadow: 0 0 16px rgba(240, 201, 106, 0.6);
+  pointer-events: none;
+}
+
+.aim-track .aim-knob { left: 50%; }
+
+.fire-btn {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 230, 190, 0.85);
+  background: radial-gradient(circle at 40% 35%, var(--vermilion-hi), var(--vermilion) 60%, #8a1f12);
+  color: #fff8ec;
+  font-family: var(--font-display);
+  font-size: 20px;
+  box-shadow: 0 8px 24px rgba(217, 69, 46, 0.45);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fire-btn.held { transform: scale(0.94); box-shadow: 0 0 30px rgba(255, 140, 90, 0.8); }
+
+.touch .dock { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); }
+.touch .corner { bottom: auto; top: calc(118px + env(safe-area-inset-top, 0px)); right: 6px; flex-direction: column; gap: 6px; }
+.touch .corner .btn.icon { width: 38px; height: 38px; font-size: 15px; background: rgba(10, 12, 36, 0.6); }
+.touch .hint { display: none; }
+
+.shard-line {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--gold-hi);
+  margin-top: 14px;
+}
+
+.shrine-item .effect { color: var(--gold-hi); font-size: 12.5px; margin: 0 0 8px; }
+.shrine-item.maxed { opacity: 0.6; }
+
+.pips { display: inline-flex; gap: 3px; margin-left: 8px; vertical-align: middle; }
+.pips i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--gold); }
+.pips i.on { background: var(--gold); }
+
+@media (max-width: 760px) {
+  .purse { gap: 8px; }
+  .stat small { font-size: 10px; letter-spacing: 0.04em; }
+  .fever-chip { font-size: 12px; padding: 4px 8px; }
+  .touch .rail { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); }
+}

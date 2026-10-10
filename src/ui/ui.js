@@ -1,7 +1,8 @@
 // DOM layer: HUD, side rails, toasts, payout pops and the modal screens
 // (title, night intro, dawn results, shop, game over, clear, help, menu).
-import { NIGHTS, MAX_CHARMS, RARITY_NAME, EXTRA_DROPS } from '../game/data.js';
+import { NIGHTS, RARITY_NAME, EXTRA_DROPS, SHRINE, shrinePrice } from '../game/data.js';
 import { charmById, talismanById } from '../game/game.js';
+import { AIM } from '../sim/config.js';
 
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -36,6 +37,8 @@ export class UI {
     this.root = root;
     this.on = handlers;
     this.cache = {};
+    this.aimMin = AIM.minX;
+    this.aimMax = AIM.maxX;
     this._build();
   }
 
@@ -56,13 +59,16 @@ export class UI {
       h('div', { class: 'bar' }, e.bar));
     e.bank = h('b', { class: 'num' });
     e.bankStat = h('div', { class: 'stat bank' }, h('small', {}, '持ちメダル'), e.bank);
+    e.caught = h('b', { class: 'num' });
+    e.caughtStat = h('div', { class: 'stat' }, h('small', {}, '箱入り'), e.caught);
+    e.fever = h('div', { class: 'fever-chip', hidden: true });
     e.drops = h('b', { class: 'num' });
     e.dropLabel = h('small', {}, '今夜のメダル');
     e.dropStat = h('div', { class: 'stat' }, e.dropLabel, e.drops);
     e.hud = h('div', { class: 'hud' },
       h('div', { class: 'night-chip' }, e.moon, h('div', { class: 'night-label' }, e.nightSmall, e.nightName, e.omen)),
       e.quota,
-      h('div', { class: 'purse' }, e.dropStat, e.bankStat));
+      h('div', { class: 'purse' }, e.fever, e.caughtStat, e.dropStat, e.bankStat));
     r.append(e.hud);
 
     e.charms = h('div', { class: 'seals' });
@@ -71,12 +77,32 @@ export class UI {
     e.railR = h('div', { class: 'rail right' }, h('h3', {}, 'お札'), e.talis);
     r.append(e.railL, e.railR);
 
-    e.hint = h('div', { class: 'hint' }, 'クリック/タップで投入 ・ 長押しで連続 ・ ← → で狙い');
+    e.hint = h('div', { class: 'hint' }, 'マウスで狙い ・ クリックで発射 ・ 長押しで連射 ・ ← → と Space でも操作');
     e.grace = h('div', { class: 'grace', hidden: true });
     e.dawnBtn = h('button', { class: 'btn primary', hidden: true, onclick: () => this.on.dawn() }, '夜明けにする');
     e.borrowBtn = h('button', { class: 'btn gold', hidden: true, onclick: () => this.on.borrow() }, 'メダルを50枚借りる');
     e.dock = h('div', { class: 'dock' }, e.hint, e.grace, e.dawnBtn, e.borrowBtn);
     r.append(e.dock);
+
+    // Touch controls: drag the aim track, hold the fire button.
+    e.knob = h('span', { class: 'aim-knob' });
+    e.track = h('div', { class: 'aim-track', role: 'slider', 'aria-label': '狙い', tabindex: '-1' }, h('span', { class: 'aim-line' }), e.knob);
+    e.fireBtn = h('button', { class: 'fire-btn', 'aria-label': '発射 (長押しで連射)' }, '発射');
+    e.controls = h('div', { class: 'controls', hidden: true }, e.track, e.fireBtn);
+    r.append(e.controls);
+    const aimFromTrack = (ev) => {
+      const rect = e.track.getBoundingClientRect();
+      const f = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+      this.on.aimFraction(f);
+    };
+    e.track.addEventListener('pointerdown', (ev) => { ev.preventDefault(); e.track.setPointerCapture(ev.pointerId); aimFromTrack(ev); });
+    e.track.addEventListener('pointermove', (ev) => { if (e.track.hasPointerCapture(ev.pointerId)) aimFromTrack(ev); });
+    e.fireBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); e.fireBtn.setPointerCapture(ev.pointerId); e.fireBtn.classList.add('held'); this.on.fireDown(); });
+    const fireUp = () => { e.fireBtn.classList.remove('held'); this.on.fireUp(); };
+    e.fireBtn.addEventListener('pointerup', fireUp);
+    e.fireBtn.addEventListener('pointercancel', fireUp);
+    e.fireBtn.addEventListener('lostpointercapture', fireUp);
+    e.fireBtn.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
     e.viewBtn = h('button', { class: 'btn icon', title: '視点切替 (V)', 'aria-label': '視点切替', onclick: () => this.on.view() }, '視');
     e.menuBtn = h('button', { class: 'btn icon', title: 'メニュー (Esc)', 'aria-label': 'メニュー', onclick: () => this.on.menu() }, '≡');
@@ -90,7 +116,7 @@ export class UI {
     r.append(e.tip);
 
     this.screens = {};
-    for (const name of ['title', 'intro', 'dawn', 'shop', 'over', 'clear', 'help', 'menu']) {
+    for (const name of ['title', 'intro', 'dawn', 'shop', 'over', 'clear', 'help', 'menu', 'shrine']) {
       const s = h('div', { class: 'screen', hidden: true });
       this.screens[name] = s;
       r.append(s);
@@ -112,6 +138,7 @@ export class UI {
       e.railR.hidden = !run || !playing;
       e.dock.hidden = !playing;
       e.corner.hidden = !playing;
+      e.controls.hidden = !playing;
       e.quota.style.visibility = run ? 'visible' : 'hidden';
       e.dropStat.hidden = !run;
     });
@@ -138,6 +165,7 @@ export class UI {
         e.quota.classList.toggle('met', net >= n.quota);
       });
       const extra = n.dropsLeft <= 0;
+      set('caught', n.caught, (v) => { e.caught.textContent = v; });
       set('drops', `${n.dropsLeft}/${n.dropsTotal}/${extra ? game.extraDropsLeft() : ''}`, () => {
         e.dropLabel.textContent = extra ? '追加投入' : '今夜のメダル';
         e.drops.textContent = extra ? `${game.extraDropsLeft()}` : `${n.dropsLeft}`;
@@ -155,7 +183,7 @@ export class UI {
       e.bank.textContent = v;
       e.bankStat.classList.toggle('low', v < 5);
     });
-    set('charms', game.charms.join(','), () => this._renderCharms(game));
+    set('charms', game.charms.join(',') + game.stats.maxCharms, () => this._renderCharms(game));
     set('talis', game.talismans.join(',') + game.stats.talismanSlots + game.phase, () => this._renderTalismans(game));
 
     // Dock: grace countdown and dawn button
@@ -174,6 +202,14 @@ export class UI {
       set('dawnBtn', false, () => { e.dawnBtn.hidden = true; });
     }
     set('borrow', game.mode === 'free' && game.bank <= 0, (v) => { e.borrowBtn.hidden = !v; });
+    set('fever', game.fever, (v) => {
+      e.fever.hidden = !(v > 0);
+      e.fever.textContent = `フィーバー 残り${v}`;
+    });
+    set('caughtVis', run, (v) => { e.caughtStat.hidden = !v; });
+    // Aim knob on the touch track.
+    const f = (game.aim.target - this.aimMin) / (this.aimMax - this.aimMin);
+    set('knob', Math.round(f * 200), () => { e.knob.style.left = `${(f * 100).toFixed(1)}%`; });
   }
 
   _seal(charm, extra = {}) {
@@ -185,7 +221,7 @@ export class UI {
   _renderCharms(game) {
     const box = this.el.charms;
     box.replaceChildren();
-    for (let i = 0; i < MAX_CHARMS; i++) {
+    for (let i = 0; i < game.stats.maxCharms; i++) {
       const id = game.charms[i];
       box.append(id ? this._seal(charmById[id]) : h('span', { class: 'seal empty', 'aria-hidden': 'true' }));
     }
@@ -269,23 +305,46 @@ export class UI {
   showTitle({ hasSave, record, settings }) {
     const moonCanvas = h('canvas', { width: 220, height: 220 });
     this.on.drawTitleMoon?.(moonCanvas);
-    const toggles = h('div', { class: 'settings-row' }, ...this._settingToggles(settings));
+    const toggles = this._settingsPanel(settings);
     const card = h('div', { class: 'card title-card' },
       h('div', { class: 'title-moon' }, moonCanvas),
       h('h1', { class: 'logo' }, '月兎プッシャー'),
       h('div', { class: 'logo-sub' }, 'MOON RABBIT PUSHER'),
-      h('p', {}, '新月から満月まで、八つの夜を越えるメダルプッシャー。毎晩ノルマ分のメダルを払い出して月へ上納し、残りで夜店のお守りを集めて盤面を育てよう。'),
+      h('p', {}, '新月から満月まで、八つの夜を越えるメダルプッシャー。左右のピッチャーでメダルを撃ち、お賽銭箱に落ちた分を月へ上納しよう。ランで集めた月の欠片で、月の社の強化が進む。'),
       h('div', { class: 'actions' },
         hasSave ? h('button', { class: 'btn primary', onclick: () => this.on.continueRun() }, '続きから') : null,
         h('button', { class: hasSave ? 'btn' : 'btn primary', onclick: () => this.on.newRun() }, 'ランをはじめる'),
+        h('button', { class: 'btn gold', onclick: () => this.on.openShrine() }, `月の社 (${record?.shards ?? 0})`),
         h('button', { class: 'btn', onclick: () => this.on.freePlay() }, 'フリープレイ'),
         h('button', { class: 'btn', onclick: () => this.showHelp(() => this.on.backToTitle()) }, '遊び方')),
       record ? h('div', { class: 'record' },
+        h('span', {}, '月の欠片 ', h('b', {}, `${record.shards || 0}`)),
         h('span', {}, '最高到達 ', h('b', {}, record.best ? `第${record.best}夜` : '—')),
         h('span', {}, '満月成就 ', h('b', {}, `${record.clears || 0}回`)),
         h('span', {}, '最大JP ', h('b', {}, `${record.bestJp || 0}枚`))) : null,
       toggles);
     this._show('title', card);
+  }
+
+  _settingsPanel(settings) {
+    const slider = (key, label) => {
+      const id = `vol-${key}`;
+      const out = h('output', { for: id, class: 'num' }, String(settings.vol[key]));
+      const input = h('input', { type: 'range', id, min: '0', max: '100', step: '5', value: String(settings.vol[key]) });
+      input.addEventListener('input', () => {
+        settings.vol[key] = Number(input.value);
+        out.textContent = input.value;
+        this.on.settings(settings, true);
+      });
+      // Save once the drag ends rather than on every step.
+      input.addEventListener('change', () => this.on.settings(settings));
+      return h('label', { class: 'vol', for: id }, h('span', {}, label), input, out);
+    };
+    return h('div', { class: 'settings' },
+      slider('master', '全体の音量'),
+      slider('sfx', '効果音'),
+      slider('bgm', 'BGM'),
+      h('div', { class: 'settings-row' }, ...this._settingToggles(settings)));
   }
 
   _settingToggles(settings) {
@@ -307,8 +366,7 @@ export class UI {
       return btn;
     };
     return [
-      mk('sound', '効果音', [[true, 'オン'], [false, 'オフ']]),
-      mk('music', '音楽', [[true, 'オン'], [false, 'オフ']]),
+      mk('sound', '音', [[true, 'オン'], [false, 'ミュート']]),
       mk('quality', '画質', [['high', '高'], ['medium', '中'], ['low', '低']]),
     ];
   }
@@ -325,7 +383,7 @@ export class UI {
       h('p', { class: 'eyebrow' }, `第${night.index + 1}夜 ・ ${night.reading}`),
       h('h2', {}, night.name),
       facts,
-      h('p', { class: 'muted' }, '今夜のメダルを投入し、手前に落ちた払い出しで持ちメダルを増やす。今夜の収支がノルマに届けば、夜明けにその枚数を月へ上納して次の夜へ。'),
+      h('p', { class: 'muted' }, '今夜のメダルをピッチャーで撃ち込む。手前から落ちてお賽銭箱に入ったメダルだけが払い出し。今夜の収支がノルマに届けば、夜明けにその枚数を月へ上納して次の夜へ。'),
       omen,
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => { this.hideAll(); onGo(); } }, '夜をはじめる')));
     this._show('intro', card);
@@ -385,7 +443,7 @@ export class UI {
       h('div', { class: 'shop-head' },
         h('div', {}, h('p', { class: 'eyebrow' }, `次は 第${game.nightIndex + 2}夜 ${next.name} ・ ノルマ ${next.quota}枚`), h('h2', {}, '夜店')),
         bankEl),
-      h('div', { class: 'shelf-label' }, `お守り (${game.charms.length}/${MAX_CHARMS}) ・ ラン中ずっと効く`),
+      h('div', { class: 'shelf-label' }, `お守り (${game.charms.length}/${game.stats.maxCharms}) ・ ラン中ずっと効く`),
       h('div', { class: 'shelf' }, ...shop.charms.map((it) => item(it, 'charm'))),
       h('div', { class: 'shelf-label' }, `お札 (${game.talismans.length}/${game.stats.talismanSlots}) ・ 夜の間に一度だけ使える`),
       h('div', { class: 'shelf' }, ...shop.talismans.map((it) => item(it, 'talisman'))),
@@ -393,12 +451,12 @@ export class UI {
       owned,
       h('p', { class: 'muted', style: 'margin-top:14px' }, `持ちメダルは、今夜のメダルが尽きた後の追加投入 (${EXTRA_DROPS}回まで) にも使える。`),
       h('div', { class: 'actions' },
-        h('button', { class: 'btn', disabled: game.bank < shop.rerollCost, onclick: () => this.on.reroll() }, `品替え (${shop.rerollCost}枚)`),
+        h('button', { class: 'btn', disabled: game.bank < game.rerollCost(), onclick: () => this.on.reroll() }, game.rerollCost() === 0 ? '品替え (無料)' : `品替え (${game.rerollCost()}枚)`),
         h('button', { class: 'btn primary', onclick: () => this.on.leaveShop() }, '次の夜へ')));
     this._show('shop', card);
   }
 
-  showOver(game, onRetry, onTitle) {
+  showOver(game, shards, onRetry, onTitle, onShrine) {
     const n = game.night;
     const card = h('div', { class: 'card' },
       h('p', { class: 'eyebrow' }, `第${n.index + 1}夜 ・ ${n.name}`),
@@ -409,13 +467,15 @@ export class UI {
         h('div', {}, h('span', {}, 'ラン中の払い出し'), h('span', { class: 'num' }, `${game.run.paid}枚`)),
         h('div', {}, h('span', {}, '投入したメダル'), h('span', { class: 'num' }, `${game.run.dropped}枚`)),
         h('div', {}, h('span', {}, 'ジャックポット'), h('span', { class: 'num' }, `${game.run.jackpots}回`))),
+      h('p', { class: 'shard-line' }, `月の欠片 +${shards}`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn primary', onclick: onRetry }, 'もう一度'),
+        h('button', { class: 'btn gold', onclick: onShrine }, '月の社で強化'),
         h('button', { class: 'btn', onclick: onTitle }, 'タイトルへ')));
     this._show('over', card);
   }
 
-  showClear(game, onRetry, onFree, onTitle) {
+  showClear(game, shards, onRetry, onFree, onTitle, onShrine) {
     const card = h('div', { class: 'card' },
       h('span', { class: 'moon-big', html: moonSvg(1, 96), style: 'display:block;margin:0 auto 8px' }),
       h('p', { class: 'eyebrow' }, '八つの夜を越えて'),
@@ -426,8 +486,10 @@ export class UI {
         h('div', {}, h('span', {}, '投入したメダル'), h('span', { class: 'num' }, `${game.run.dropped}枚`)),
         h('div', {}, h('span', {}, 'ジャックポット'), h('span', { class: 'num' }, `${game.run.jackpots}回`)),
         h('div', {}, h('span', {}, '最後の持ちメダル'), h('span', { class: 'num' }, `${game.bank}枚`))),
+      h('p', { class: 'shard-line' }, `月の欠片 +${shards}`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn primary', onclick: onRetry }, 'もう一度'),
+        h('button', { class: 'btn gold', onclick: onShrine }, '月の社で強化'),
         h('button', { class: 'btn', onclick: onFree }, 'フリープレイへ'),
         h('button', { class: 'btn', onclick: onTitle }, 'タイトルへ')));
     this._show('clear', card);
@@ -437,12 +499,13 @@ export class UI {
     const card = h('div', { class: 'card' },
       h('h2', {}, '遊び方'),
       h('ol', { class: 'howto' },
-        h('li', {}, '画面をクリック/タップした横位置からメダルを投入。長押しで連続投入、', h('kbd', {}, '←'), h('kbd', {}, '→'), ' と ', h('kbd', {}, 'Space'), ' でも操作できる。'),
-        h('li', {}, 'メダルはステージの釘を抜けてプッシャーへ。手前の縁から落ちたメダルが払い出し、横に落ちると没収。'),
-        h('li', {}, 'ステージ中央の鳥居をくぐると液晶スロットの抽選。7揃いでジャックポット、月揃いで月玉が出る。'),
+        h('li', {}, '左右のピッチャーが狙いの位置 (金の輪) へ交互にメダルを撃つ。マウスやドラッグで狙いを左右に動かし、クリック/タップで発射、長押しで連射。', h('kbd', {}, '←'), h('kbd', {}, '→'), ' と ', h('kbd', {}, 'Space'), ' でも操作できる。スマホでは下の狙いバーと発射ボタンが使える。'),
+        h('li', {}, 'メダルは揺れる釘を抜けてプッシャーへ。手前の縁から落ちて、下を動くお賽銭箱に入ったメダルだけが払い出し。箱を外すと没収。'),
+        h('li', {}, 'ゆっくり動く鳥居をくぐると液晶スロットの保留。保留ランプの色 (青・緑・赤・金・虹) が当たりの予感。7揃いでジャックポット、月揃いで月玉とフィーバー。'),
         h('li', {}, '各夜には「今夜のメダル」と上納ノルマがある。今夜の収支 (払い出し − 追加投入) がノルマに届けば、夜明けにノルマ分を上納して次の夜へ。届かなければランは終わり。'),
         h('li', {}, `今夜のメダルを使い切ったら、持ちメダルから${EXTRA_DROPS}回まで追加投入できる。追加投入した枚数は今夜の収支から引かれる。最後の投入から数秒たつと夜が明ける。`),
         h('li', {}, '夜明けの後は夜店。上納の残りの持ちメダルで買い物をする。お守りは盤面をずっと変え、お札は夜の間に一度だけ使える (', h('kbd', {}, '1'), '〜', h('kbd', {}, '3'), ')。'),
+        h('li', {}, 'ランが終わると、進んだ夜の数に応じて月の欠片がもらえる。タイトルの「月の社」で、ピッチャーやお賽銭箱をずっと強化できる。'),
         h('li', {}, h('kbd', {}, 'V'), ' で視点切替、', h('kbd', {}, 'M'), ' で消音、', h('kbd', {}, 'Esc'), ' でメニュー。')),
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: onBack }, 'もどる')));
     this._show('help', card);
@@ -451,12 +514,41 @@ export class UI {
   showMenu({ settings, mode, onResume, onTitle, onRestart }) {
     const card = h('div', { class: 'card' },
       h('h2', {}, 'ひと休み'),
-      h('div', { class: 'settings-row' }, ...this._settingToggles(settings)),
+      this._settingsPanel(settings),
       h('div', { class: 'actions' },
         h('button', { class: 'btn primary', onclick: onResume }, 'つづける'),
         h('button', { class: 'btn', onclick: () => this.showHelp(() => this.showMenu({ settings, mode, onResume, onTitle, onRestart })) }, '遊び方'),
         mode === 'run' ? h('button', { class: 'btn', onclick: onRestart }, 'ランをやり直す') : null,
         h('button', { class: 'btn', onclick: onTitle }, 'タイトルへ (自動保存)')));
     this._show('menu', card);
+  }
+
+  showShrine(meta, shards, onBuy, onBack) {
+    const rows = SHRINE.map((u) => {
+      const lv = meta[u.id] || 0;
+      const maxed = lv >= u.max;
+      const price = maxed ? 0 : shrinePrice(u.rank, lv);
+      const pips = h('span', { class: 'pips', 'aria-label': `レベル ${lv} / ${u.max}` },
+        ...Array.from({ length: u.max }, (_, i) => h('i', { class: i < lv ? 'on' : '' })));
+      const effect = lv > 0 ? u.effect(lv) : 'なし';
+      const next = maxed ? '' : ` → ${u.effect(lv + 1)}`;
+      return h('div', { class: `item shrine-item ${maxed ? 'maxed' : ''}` },
+        h('span', { class: 'seal r2', 'aria-hidden': 'true' }, u.seal),
+        h('div', {},
+          h('h4', {}, u.name, u.max > 1 ? pips : null),
+          h('p', {}, u.desc),
+          h('p', { class: 'effect' }, `いま: ${effect}${next}`),
+          maxed
+            ? h('span', { class: 'muted' }, '最大まで強化済み')
+            : h('button', { class: 'btn gold', disabled: shards < price, onclick: () => onBuy(u.id) }, `月の欠片 ${price}`)));
+    });
+    const card = h('div', { class: 'card wide' },
+      h('div', { class: 'shop-head' },
+        h('div', {}, h('p', { class: 'eyebrow' }, 'ランを越えて残る強化'), h('h2', {}, '月の社')),
+        h('div', { class: 'shop-bank num' }, h('small', {}, '月の欠片'), `${shards}`)),
+      h('p', { class: 'muted', style: 'text-align:left;max-width:none' }, '月の欠片はランが終わるたびに、進んだ夜の数に応じて授かる。'),
+      h('div', { class: 'shelf' }, ...rows),
+      h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: onBack }, 'もどる')));
+    this._show('shrine', card);
   }
 }

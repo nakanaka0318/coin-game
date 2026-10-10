@@ -3,10 +3,10 @@
 import './styles.css';
 import * as THREE from 'three';
 import { PhysicsWorld, KIND } from './sim/physics.js';
-import { WORLD, DROP, FRONT_Z, HALF_W, STAGE, stagePoint, COIN } from './sim/config.js';
+import { WORLD, FRONT_Z, HALF_W, STAGE, BOX, AIM, LANDING, stagePoint } from './sim/config.js';
 import initialField from './sim/initial-field.json';
-import { Game, charmById, talismanById } from './game/game.js';
-import { NIGHTS } from './game/data.js';
+import { Game, charmById, talismanById, shrineById } from './game/game.js';
+import { NIGHTS, shrinePrice } from './game/data.js';
 import { SceneView } from './render/scene.js';
 import { Cabinet } from './render/cabinet.js';
 import { CoinRenderer } from './render/coins.js';
@@ -28,12 +28,16 @@ function saveStore(data) {
 }
 
 const isTouch = matchMedia('(pointer: coarse)').matches;
+document.documentElement.classList.toggle('touch', isTouch);
 const store = loadStore();
-const settings = Object.assign({ sound: true, music: true, quality: isTouch ? 'medium' : 'high' }, store.settings);
-const record = Object.assign({ best: 0, clears: 0, bestJp: 0 }, store.record);
+const settings = Object.assign({ sound: true, quality: isTouch ? 'medium' : 'high' }, store.settings);
+settings.vol = Object.assign({ master: 80, sfx: 80, bgm: 50 }, settings.vol);
+if (settings.music === false) settings.vol.bgm = 0;
+delete settings.music;
+const record = Object.assign({ best: 0, clears: 0, bestJp: 0, shards: 0, earned: 0 }, store.record);
+const meta = Object.assign({}, store.meta);
 
 const loading = document.getElementById('loading');
-const loadingMsg = document.getElementById('loading-msg');
 
 async function loadRapier() {
   if (typeof WebAssembly !== 'object') throw new Error('WebAssembly unavailable');
@@ -66,7 +70,7 @@ try {
 // --- world ---------------------------------------------------------------
 const audio = new AudioEngine();
 audio.enabled = settings.sound;
-audio.musicOn = settings.music;
+audio.levels = { ...settings.vol };
 let impactsOn = false;
 const world = new PhysicsWorld(RAPIER, {
   onImpact: (m1, m2, speed, x) => { if (impactsOn) audio.impact(m1, m2, speed, x); },
@@ -75,33 +79,13 @@ const world = new PhysicsWorld(RAPIER, {
 const canvas = document.getElementById('view');
 const view = new SceneView(canvas, settings.quality);
 const lcd = new LcdDisplay();
-const cabinet = new Cabinet(view.scene, world.parts, lcd.texture);
+const cabinet = new Cabinet(view.scene, world, lcd.texture);
 const coins = new CoinRenderer(view.scene, 1200);
 coins.setShadows(settings.quality !== 'low');
 const sparkles = new Sparkles(view.scene);
 
-// Drop rail with a ghost medal showing where the next medal falls.
-const aim = { x: 0, target: 0, visible: true };
-const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, HALF_W * 2, 12),
-  new THREE.MeshStandardMaterial({ color: 0xe8b955, metalness: 1, roughness: 0.3 }));
-rail.rotation.z = Math.PI / 2;
-rail.position.set(0, DROP.y + 0.75, DROP.z);
-view.scene.add(rail);
-const ghost = new THREE.Group();
-const ghostCoin = new THREE.Mesh(new THREE.CylinderGeometry(COIN.radius, COIN.radius, COIN.halfHeight * 2, 32),
-  new THREE.MeshBasicMaterial({ color: 0xffe7a3, transparent: true, opacity: 0.55, depthWrite: false }));
-ghostCoin.rotation.x = Math.PI / 2;
-const ghostClip = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.3),
-  new THREE.MeshStandardMaterial({ color: 0xd9452e, metalness: 0.3, roughness: 0.4 }));
-ghostClip.position.y = 0.72;
-const beam = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 3.2),
-  new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending }));
-beam.position.y = -1.9;
-ghost.add(ghostCoin, ghostClip, beam);
-ghost.position.set(0, DROP.y, DROP.z);
-view.scene.add(ghost);
-
 const game = new Game(world, { emit: onGameEvent, initialField });
+game.meta = meta;
 
 // --- UI ----------------------------------------------------------------------
 const ui = new UI(document.getElementById('ui'), {
@@ -109,6 +93,7 @@ const ui = new UI(document.getElementById('ui'), {
   continueRun: () => continueSaved(),
   freePlay: () => startFree(),
   backToTitle: () => showTitle(),
+  openShrine: () => openShrine(),
   dawn: () => game.callDawn(),
   borrow: () => { game.bank += 50; game.freeStats.borrowed = (game.freeStats.borrowed || 0) + 50; audio.buy(); ui.toast('50枚借りた'); },
   view: () => view.cycleView(),
@@ -118,7 +103,10 @@ const ui = new UI(document.getElementById('ui'), {
   sell: (i) => { game.sellCharm(i); audio.click(); },
   reroll: () => { if (game.reroll()) audio.click(); },
   leaveShop: () => { audio.click(); game.leaveShop(); persist(); },
-  settings: (s) => applySettings(s),
+  settings: (s, live) => applySettings(s, !live),
+  aimFraction: (f) => { audio.unlock(); game.setAim(AIM.minX + f * (AIM.maxX - AIM.minX)); },
+  fireDown: () => { audio.unlock(); input.fireHeld.add('button'); },
+  fireUp: () => { input.fireHeld.delete('button'); },
   drawTitleMoon: (c) => {
     const ctx = c.getContext('2d');
     const img = makeMoon(440).image;
@@ -126,21 +114,24 @@ const ui = new UI(document.getElementById('ui'), {
   },
 });
 
-function applySettings(s) {
+function applySettings(s, save = true) {
   Object.assign(settings, s);
   audio.setEnabled(settings.sound);
-  audio.setMusic(settings.music);
+  audio.setLevels(settings.vol);
   if (view.quality !== settings.quality) {
     view.setQuality(settings.quality);
     coins.setShadows(settings.quality !== 'low');
   }
-  persist();
+  if (save) persist();
 }
 
 function persist() {
-  const data = { settings, record };
+  const data = { settings, record, meta };
   if ((game.mode === 'run' && ['night', 'dawn', 'shop'].includes(game.phase)) || game.mode === 'free') {
     data.save = game.serialize();
+  } else if (game.mode === 'idle') {
+    const saved = loadStore().save;
+    if (saved) data.save = saved;
   }
   saveStore(data);
 }
@@ -153,10 +144,28 @@ function showTitle() {
   view.setView('overview');
 }
 
+function openShrine(back = showTitle) {
+  const render = () => ui.showShrine(meta, record.shards, (id) => {
+    const u = shrineById[id];
+    const lv = meta[id] || 0;
+    if (lv >= u.max) return;
+    const price = shrinePrice(u.rank, lv);
+    if (record.shards < price) return;
+    record.shards -= price;
+    meta[id] = lv + 1;
+    audio.unlock();
+    audio.buy();
+    persist();
+    render();
+  }, () => back());
+  render();
+}
+
 function startRun() {
   audio.unlock();
   ui.hideAll();
   impactsOn = false;
+  game.meta = meta;
   game.newRun();
   impactsOn = true;
   persist();
@@ -165,6 +174,7 @@ function startRun() {
 function startFree() {
   audio.unlock();
   ui.hideAll();
+  game.meta = meta;
   const saved = loadStore().save;
   if (saved && saved.mode === 'free') {
     game.deserialize(saved);
@@ -182,8 +192,9 @@ function startFree() {
 function continueSaved() {
   audio.unlock();
   const saved = loadStore().save;
-  if (!saved) { startRun(); return; }
+  if (!saved || saved.v !== 2) { startRun(); return; }
   ui.hideAll();
+  game.meta = meta;
   game.deserialize(saved);
   impactsOn = true;
   if (game.mode === 'free') { game.newFreePlay(); return; }
@@ -205,6 +216,14 @@ function openMenu() {
   });
 }
 
+function endRun(shards) {
+  record.shards += shards;
+  record.earned += shards;
+  const saved = loadStore();
+  delete saved.save;
+  saveStore({ ...saved, settings, record, meta });
+}
+
 // --- game events → feedback ------------------------------------------------
 function screenOf(x, y, z) {
   return view.worldToScreen(x, y, z);
@@ -212,16 +231,31 @@ function screenOf(x, y, z) {
 
 const SLOT_NAMES = { seven: '7揃い', moon: '満月揃い', rabbit: '兎揃い', dango: '団子揃い', sakura: '桜揃い', star: '星揃い' };
 const SLOT_COLORS = { seven: '#ff5a3c', moon: '#ffe7a3', rabbit: '#ffc2d4', dango: '#b8f0a0', sakura: '#f7a8c0', star: '#ffd34a' };
+const LAMP_TOASTS = { red: ['赤保留!', ''], gold: ['金保留!!', 'good'], rainbow: ['虹保留!!! 確定', 'big'] };
 
 function onGameEvent(type, d) {
   switch (type) {
-    case 'drop': audio.drop(d.x); break;
+    case 'fire': audio.fire(d.pitcher); cabinet.pitcherFired(d.pitcher); break;
+    case 'landed': audio.landed(d.x); break;
     case 'payout': {
-      const p = screenOf(Math.max(-HALF_W, Math.min(HALF_W, d.x)), 0.4, FRONT_Z);
-      const kind = d.kind === KIND.BALL ? 'ball' : d.kind === KIND.GOLD ? 'gold' : '';
-      ui.pop(`+${d.value}`, p.x, p.y, kind);
-      sparkles.burst(d.x, 0.1, FRONT_Z + 0.2, { count: d.value > 1 ? 18 : 7, color: d.kind === KIND.GOLD ? 0xffc23a : 0xfff1c0, speed: 2, up: 3.5 });
-      audio.payout(d.value, d.x);
+      const p = screenOf(world.boxX, BOX.floorY + BOX.height + 0.3, BOX.z);
+      const kind = d.kind === KIND.BALL ? 'ball' : d.kind === KIND.GOLD || d.kind === KIND.OBAN ? 'gold' : '';
+      ui.pop(`+${d.value}`, p.x + (Math.random() - 0.5) * 30, p.y, kind);
+      sparkles.burst(world.boxX, BOX.floorY + BOX.height, BOX.z, { count: d.value > 1 ? 22 : 8, color: kind ? 0xffc23a : 0xfff1c0, speed: 2, up: 4 });
+      cabinet.boxCatch();
+      audio.boxCatch(d.value, world.boxX);
+      audio.payout(d.value, world.boxX);
+      break;
+    }
+    case 'missed': {
+      const p = screenOf(Math.max(-HALF_W, Math.min(HALF_W, d.x)), BOX.floorY, BOX.z);
+      ui.pop('外', p.x, p.y, 'lost');
+      audio.missed(d.x);
+      break;
+    }
+    case 'cashback': {
+      const p = screenOf(Math.max(-HALF_W, Math.min(HALF_W, d.x)), BOX.floorY, BOX.z);
+      ui.pop('返 +1', p.x, p.y, 'gold');
       break;
     }
     case 'lost': {
@@ -234,21 +268,53 @@ function onGameEvent(type, d) {
     case 'checker': {
       cabinet.checkerHit();
       audio.checker();
-      const c = stagePoint(0, STAGE.length - 0.3, 1);
-      sparkles.burst(0, c.y, c.z, { count: 26, color: 0xffd27a, speed: 3, up: 4 });
-      const p = screenOf(0, c.y + 1.4, c.z);
-      ui.pop('抽選 +1', p.x, p.y);
+      const c = stagePoint(world.toriiX, STAGE.length - 0.3, 1);
+      sparkles.burst(c.x, c.y, c.z, { count: 26, color: 0xffd27a, speed: 3, up: 4 });
+      const p = screenOf(c.x, c.y + 1.4, c.z);
+      ui.pop(d.added ? '保留 +1' : '保留満タン', p.x, p.y);
       break;
     }
-    case 'spin': audio.spinStart(d.reach); break;
-    case 'reelStop': lcd.onReelStop(d.reel); audio.reelStop(d.reel, d.reach); break;
+    case 'stock': {
+      audio.stock(d.color);
+      const t = LAMP_TOASTS[d.color];
+      if (t) ui.toast(t[0], t[1]);
+      break;
+    }
+    case 'spin':
+      audio.spinStart(d.reach);
+      if (d.presentation === 'premium') {
+        audio.premium();
+        cabinet.flash('#ffffff', 3.4);
+        ui.toast('全回転!!', 'big');
+      }
+      break;
+    case 'reelStop':
+      lcd.onReelStop(d.reel);
+      audio.reelStop(d.reel, d.reach);
+      if (d.reel === 1 && (d.presentation === 'super' || d.presentation === 'revival')) {
+        const hot = ['red', 'gold', 'rainbow'].includes(game.slot.color);
+        audio.superReach(hot);
+        if (hot) cabinet.flash('#ff5a3c', 4);
+      }
+      break;
+    case 'revival':
+      lcd.onReelStop(2);
+      lcd.message('復活!!', { color: '#ffd34a', seconds: 1.4, big: true });
+      audio.revival();
+      cabinet.flash('#ffd34a', 2);
+      view.addShake(0.4);
+      break;
+    case 'slip':
+      lcd.onReelStop(2);
+      audio.reelStop(2, false);
+      break;
     case 'slotResult': {
       if (!d.outcome) { audio.stopSpin(); break; }
       audio.win(d.outcome);
       let sub = '';
-      if (d.outcome === 'moon') sub = '月玉が降ってくる';
+      if (d.outcome === 'moon') sub = '月玉 + フィーバー!';
       else if (d.outcome === 'sakura' && d.drops) sub = `今夜のメダル +${d.drops}`;
-      else if (d.outcome === 'star') sub = d.amount ? `金メダル + 銀${d.amount}枚` : '金メダル1枚';
+      else if (d.outcome === 'star') sub = d.amount ? `金メダル${d.gold}枚 + 銀${d.amount}枚` : `金メダル${d.gold}枚`;
       else if (d.amount) sub = `メダル ${d.amount}枚`;
       if (d.outcome !== 'seven') {
         lcd.message(SLOT_NAMES[d.outcome], { sub, color: SLOT_COLORS[d.outcome] });
@@ -256,6 +322,16 @@ function onGameEvent(type, d) {
       }
       break;
     }
+    case 'fever':
+      if (d.first) {
+        audio.fever();
+        lcd.message('フィーバー!!', { sub: `${d.spins}回転`, color: '#ff6b4a', seconds: 2.4, big: true });
+        ui.toast('満月フィーバー突入!', 'big');
+        cabinet.flash('#ff6b4a', 3);
+      } else {
+        ui.toast(`フィーバー延長 残り${d.spins}`, 'good');
+      }
+      break;
     case 'jackpot': {
       audio.jackpot();
       lcd.message('JACKPOT', { sub: `${d.amount}枚`, color: '#ffd34a', seconds: 4.5, big: true });
@@ -266,9 +342,9 @@ function onGameEvent(type, d) {
       if (d.amount > record.bestJp) record.bestJp = d.amount;
       break;
     }
-    case 'ball': ui.toast('月玉が出た! 手前に落とせば大当たり', 'good'); break;
+    case 'ball': ui.toast('月玉が出た! お賽銭箱に入れば大当たり', 'good'); break;
     case 'ballPayout': {
-      ui.toast(`月玉 払い出し +${d.value}枚・抽選+1`, 'big');
+      ui.toast(`月玉 +${d.value}枚・保留+1`, 'big');
       cabinet.flash('#fff3c4', 2.5);
       audio.win('moon');
       break;
@@ -295,24 +371,22 @@ function onGameEvent(type, d) {
     case 'shop': ui.showShop(game); break;
     case 'gameOver': {
       audio.fail();
-      const saved = loadStore();
-      delete saved.save;
-      saveStore({ ...saved, settings, record });
-      ui.showOver(game, () => startRun(), () => showTitle());
+      endRun(d.shards);
+      ui.showOver(game, d.shards, () => startRun(), () => showTitle(), () => openShrine());
       break;
     }
     case 'runClear': {
       record.clears += 1;
       record.best = NIGHTS.length;
       audio.jackpot();
-      saveStore({ settings, record });
-      ui.showClear(game, () => startRun(), () => { game.bank = Math.max(game.bank, 50); startFree(); }, () => showTitle());
+      endRun(d.shards);
+      ui.showClear(game, d.shards, () => startRun(), () => { game.bank = Math.max(game.bank, 50); startFree(); }, () => showTitle(), () => openShrine());
       break;
     }
     case 'quake': view.addShake(0.9 * Math.min(1.5, d.power)); audio.quake(); break;
     case 'gust': audio.gust(); sparkles.burst(0, 0.6, FRONT_Z - 1.2, { count: 40, color: 0xbfe8ff, speed: 4, up: 1.5 }); break;
     case 'talisman': ui.toast(`${talismanById[d.id].name}!`); break;
-    case 'twin': ui.toast('双子月 ・ おまけの1枚', 'good'); break;
+    case 'twin': break;
     case 'mallet': ui.toast('打ち出の小槌 ・ 金メダル!', 'good'); break;
     case 'foxfire': ui.toast('狐火 ・ 金メダルが現れた', 'good'); break;
     case 'bought': if (d.type === 'charm') ui.toast(`${charmById[d.id].name} を手に入れた`, 'good'); break;
@@ -327,40 +401,41 @@ function onGameEvent(type, d) {
 }
 
 // --- input ---------------------------------------------------------------------
-const pointer = { down: false, id: null, holdT: 0, repeatT: 0 };
-const keys = new Set();
+// One aim point on the felt strip; pitchers swing toward it. Fire while any
+// fire source is held (mouse, touch, Space, the fire button).
+const input = { fireHeld: new Set(), keys: new Set(), pointerId: null };
+const AIM_Z = stagePoint(0, LANDING.s, 0).z;
 
 function aimFromScreen(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
   const ray = new THREE.Raycaster();
   ray.setFromCamera(ndc, view.camera);
-  const t = (DROP.z - ray.ray.origin.z) / ray.ray.direction.z;
+  const t = (AIM_Z - ray.ray.origin.z) / ray.ray.direction.z;
   if (!isFinite(t) || t <= 0) return;
-  aim.target = Math.max(DROP.minX, Math.min(DROP.maxX, ray.ray.origin.x + ray.ray.direction.x * t));
+  game.setAim(ray.ray.origin.x + ray.ray.direction.x * t);
 }
 
-function tryDrop() {
-  if (ui.anyScreen() || paused) return false;
-  const ok = game.drop(aim.x);
-  if (!ok && game.mode === 'run' && game.phase === 'night' && game.night.dropsLeft <= 0 && game.bank <= 0) ui.toast('メダルがもうない', 'bad');
-  return ok;
+function canPlay() {
+  return !ui.anyScreen() && !paused && (game.phase === 'night' || game.phase === 'free');
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   audio.unlock();
-  if (ui.anyScreen()) return;
-  pointer.down = true;
-  pointer.id = e.pointerId;
-  pointer.holdT = 0;
-  pointer.repeatT = 0.42;
+  if (!canPlay()) return;
+  input.pointerId = e.pointerId;
   canvas.setPointerCapture(e.pointerId);
   aimFromScreen(e.clientX, e.clientY);
-  aim.x = aim.target;
-  tryDrop();
+  input.fireHeld.add('pointer');
+  game.requestFire();
 });
-canvas.addEventListener('pointermove', (e) => aimFromScreen(e.clientX, e.clientY));
-const release = (e) => { if (e.pointerId === pointer.id) { pointer.down = false; pointer.id = null; } };
+canvas.addEventListener('pointermove', (e) => {
+  // Mouse hover aims; touch aims only while the finger is down.
+  if (e.pointerType === 'mouse' || e.pointerId === input.pointerId) aimFromScreen(e.clientX, e.clientY);
+});
+const release = (e) => {
+  if (e.pointerId === input.pointerId) { input.pointerId = null; input.fireHeld.delete('pointer'); }
+};
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -376,22 +451,21 @@ addEventListener('keydown', (e) => {
   if (ui.anyScreen()) return;
   if (e.code === 'Space' || e.code === 'Enter') {
     e.preventDefault();
-    keys.add('drop');
-    pointer.repeatT = 0.42;
-    tryDrop();
-  } else if (k === 'arrowleft' || k === 'a') keys.add('left');
-  else if (k === 'arrowright' || k === 'd') keys.add('right');
+    input.fireHeld.add('key');
+    if (canPlay()) game.requestFire();
+  } else if (k === 'arrowleft' || k === 'a') input.keys.add('left');
+  else if (k === 'arrowright' || k === 'd') input.keys.add('right');
   else if (k === 'v') view.cycleView();
   else if (k === 'm') applySettings({ sound: !settings.sound });
   else if (['1', '2', '3'].includes(k)) game.useTalisman(Number(k) - 1);
 });
 addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
-  if (e.code === 'Space' || e.code === 'Enter') keys.delete('drop');
-  if (k === 'arrowleft' || k === 'a') keys.delete('left');
-  if (k === 'arrowright' || k === 'd') keys.delete('right');
+  if (e.code === 'Space' || e.code === 'Enter') input.fireHeld.delete('key');
+  if (k === 'arrowleft' || k === 'a') input.keys.delete('left');
+  if (k === 'arrowright' || k === 'd') input.keys.delete('right');
 });
-addEventListener('blur', () => { keys.clear(); pointer.down = false; });
+addEventListener('blur', () => { input.keys.clear(); input.fireHeld.clear(); });
 addEventListener('resize', () => view.resize());
 addEventListener('pagehide', persist);
 document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
@@ -408,14 +482,12 @@ function frame() {
   last = now;
   stats.frames++;
 
-  // Aim movement and auto-drop while held.
-  if (keys.has('left')) aim.target = Math.max(DROP.minX, aim.target - 7 * dt);
-  if (keys.has('right')) aim.target = Math.min(DROP.maxX, aim.target + 7 * dt);
-  aim.x += (aim.target - aim.x) * Math.min(1, dt * 18);
-  if ((pointer.down || keys.has('drop')) && !ui.anyScreen()) {
-    pointer.repeatT -= dt;
-    if (pointer.repeatT <= 0) { pointer.repeatT = 0.26; tryDrop(); }
-  }
+  if (input.keys.has('left')) game.setAim(game.aim.target - 8 * dt);
+  if (input.keys.has('right')) game.setAim(game.aim.target + 8 * dt);
+  // Holding fire queues the next shot just as the pitchers come ready, so
+  // letting go never leaves a stray shot behind.
+  if (!canPlay()) input.fireHeld.clear();
+  else if (input.fireHeld.size && game.cooldown <= 0.02) game.requestFire();
 
   if (!paused) {
     acc += dt;
@@ -431,12 +503,9 @@ function frame() {
     stats.stepMs = world.lastStepMs;
   }
 
-  ghost.position.x = aim.x;
-  ghost.position.y = DROP.y + Math.sin(now / 300) * 0.05;
-  ghost.visible = game.canDrop() && !ui.anyScreen();
-
   coins.update(world);
-  cabinet.update(dt, world.pusherFront, cabinet.flashKind === 'jackpot' && cabinet.flashTimer > 0);
+  cabinet.updateAim(game, canPlay() && game.canFire());
+  cabinet.update(dt, world.pusherFront, cabinet.flashKind === 'jackpot' && cabinet.flashTimer > 0, game.fever > 0);
   sparkles.setScale(view.renderer.domElement.height * 0.9);
   sparkles.update(dt);
   lcd.draw(dt, game);
@@ -450,6 +519,7 @@ function frame() {
 
 // Attract mode behind the title: the baked pile with the pusher running.
 game.resetField();
+game._recomputeStats();
 loading.hidden = true;
 showTitle();
 requestAnimationFrame(frame);
@@ -459,4 +529,5 @@ if (document.fonts) document.fonts.ready.then(() => { lcd.redrawSymbols(); });
 
 window.__game = game;
 window.__view = view;
+window.__lcd = lcd;
 window.__ready = true;

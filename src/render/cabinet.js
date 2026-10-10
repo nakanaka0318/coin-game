@@ -3,11 +3,12 @@
 // meshes match what the physics sees.
 import * as THREE from 'three';
 import {
-  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, stagePoint,
+  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD,
+  stagePoint,
 } from '../sim/config.js';
-import { checkerPostPos } from '../sim/machine.js';
+import { checkerPostPos, quatX } from '../sim/machine.js';
 import {
-  PALETTE, makeSeigaiha, makeStageArt, makeMoon, makeLantern, makeCanvas,
+  PALETTE, makeSeigaiha, makeStageArt, makeMoon, makeLantern, makeCanvas, makeWoodTexture,
 } from './textures.js';
 
 const lacquer = (color, extra = {}) => new THREE.MeshPhysicalMaterial({
@@ -15,7 +16,8 @@ const lacquer = (color, extra = {}) => new THREE.MeshPhysicalMaterial({
 });
 
 export class Cabinet {
-  constructor(scene, parts, lcdTexture) {
+  constructor(scene, world, lcdTexture) {
+    this.world = world;
     this.scene = scene;
     this.group = new THREE.Group();
     scene.add(this.group);
@@ -36,6 +38,9 @@ export class Cabinet {
       chrome: new THREE.MeshStandardMaterial({ color: 0xf2f4f8, metalness: 1, roughness: 0.12 }),
       pit: new THREE.MeshBasicMaterial({ color: 0x020205 }),
     };
+    const woodTex = makeWoodTexture();
+    mats.wood = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.6, metalness: 0.05, color: 0xc58a55 });
+    mats.boxFront = new THREE.MeshStandardMaterial({ map: this._boxFrontTexture(), roughness: 0.55, metalness: 0.05 });
 
     const fieldTex = makeSeigaiha(1024, { scale: 64, alpha: 0.42 });
     fieldTex.repeat.set((HALF_W * 2) / 17, 18 / 17);
@@ -43,18 +48,195 @@ export class Cabinet {
     const pusherTex = makeSeigaiha(512, { bg: '#20255e', line: '#cfd6ff', alpha: 0.32, scale: 40 });
     pusherTex.repeat.set((PUSHER.halfWidth * 2) / 9, PUSHER.depth / 9);
     mats.pusherTop = new THREE.MeshStandardMaterial({ map: pusherTex, metalness: 0.6, roughness: 0.35 });
-    const stageArt = makeStageArt();
+    // The stage box spans s from -0.4 (into the back board) to the lip; the
+    // texture's top row is the back of the stage.
+    const span = STAGE.length + 0.4;
+    const f = (sv) => (sv + 0.4) / span;
+    const stageArt = makeStageArt(1024, 512, [f(LANDING.sMin), f(LANDING.sMax), f(LANDING.s)]);
     mats.stage = new THREE.MeshStandardMaterial({
       map: stageArt, emissiveMap: stageArt, emissive: 0xffffff, emissiveIntensity: 0.18,
       roughness: 0.78, metalness: 0, envMapIntensity: 0.25, color: 0xb8bcd8,
     });
 
-    for (const p of parts) this._partMesh(p);
+    for (const p of world.parts) this._partMesh(p);
     this._buildFrame();
     this._buildPusher();
+    this._buildPins();
     this._buildTorii();
     this._buildBackboard(lcdTexture);
     this._buildLamps();
+    this._buildBox();
+    this._buildPitchers();
+    this._buildAimMarkers();
+  }
+
+  _buildPins() {
+    const g = new THREE.CylinderGeometry(STAGE.pinRadius, STAGE.pinRadius, STAGE.pinHeight, 18);
+    const capGeo = new THREE.SphereGeometry(STAGE.pinRadius * 1.25, 14, 10);
+    const qa = quatX(STAGE.angle);
+    this.pinMeshes = this.world.pins.map((p) => {
+      const mesh = new THREE.Mesh(g, this.mats.chrome);
+      mesh.quaternion.set(qa[0], qa[1], qa[2], qa[3]);
+      mesh.position.copy(p.base);
+      mesh.castShadow = true;
+      const cap = new THREE.Mesh(capGeo, this.mats.gold);
+      cap.position.y = STAGE.pinHeight / 2;
+      mesh.add(cap);
+      this.group.add(mesh);
+      return mesh;
+    });
+  }
+
+  // Offering box (賽銭箱): open-top wooden box riding a rail under the edge.
+  _buildBox() {
+    if (this.boxGroup) this.group.remove(this.boxGroup);
+    const w = this.world.boxWidth / 2, d = BOX.depth / 2, t = BOX.wall, hgt = BOX.height;
+    const g = this.boxGroup = new THREE.Group();
+    const wood = this.mats.wood;
+    const add = (sx, sy, sz, x, y, z, mat = wood) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      g.add(m);
+      return m;
+    };
+    add((w + t) * 2, t, (d + t) * 2, 0, -t / 2, 0);
+    add((w + t) * 2, hgt, t, 0, hgt / 2, -d - t / 2);
+    add((w + t) * 2, hgt, t, 0, hgt / 2, d + t / 2, [wood, wood, wood, wood, this.mats.boxFront, wood]);
+    add(t, hgt, d * 2, -w - t / 2, hgt / 2, 0);
+    add(t, hgt, d * 2, w + t / 2, hgt / 2, 0);
+    // Gold rim along the top edges.
+    const rim = this.mats.gold;
+    add((w + t) * 2 + 0.06, 0.07, 0.07, 0, hgt + 0.02, -d - t / 2, rim);
+    add((w + t) * 2 + 0.06, 0.07, 0.07, 0, hgt + 0.02, d + t / 2, rim);
+    add(0.07, 0.07, (d + t) * 2, -w - t / 2, hgt + 0.02, 0, rim);
+    add(0.07, 0.07, (d + t) * 2, w + t / 2, hgt + 0.02, 0, rim);
+    // Glow inside, flashes when a medal lands.
+    this.boxGlow = new THREE.Mesh(new THREE.PlaneGeometry(w * 2, d * 2),
+      new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    this.boxGlow.rotation.x = -Math.PI / 2;
+    this.boxGlow.position.y = 0.02;
+    g.add(this.boxGlow);
+    g.position.set(this.world.boxX, BOX.floorY, BOX.z);
+    this.group.add(g);
+    this.boxBuiltWidth = this.world.boxWidth;
+  }
+
+  boxCatch() {
+    this.boxFlash = 1;
+  }
+
+  _buildPitchers() {
+    const m = this.mats;
+    this.pitchers = [-1, 1].map((side) => {
+      const root = new THREE.Group();
+      root.position.set(side * PITCHER.x, PITCHER.y, PITCHER.z);
+      root.scale.setScalar(1.35);
+      // Mount on the wall.
+      const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.25, 24), m.gold);
+      mount.rotation.z = Math.PI / 2;
+      mount.position.x = side * 0.15;
+      root.add(mount);
+      const yaw = new THREE.Group();
+      root.add(yaw);
+      const pitch = new THREE.Group();
+      yaw.add(pitch);
+      // Drum body with gold bands, barrel along local +z.
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.62, 28), m.vermilion);
+      drum.rotation.x = Math.PI / 2;
+      pitch.add(drum);
+      for (const z of [-0.26, 0.26]) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.035, 8, 28), m.gold);
+        band.position.z = z;
+        pitch.add(band);
+      }
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.8, 20, 1, true), m.black);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.z = 0.6;
+      pitch.add(barrel);
+      const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.035, 8, 20), m.gold);
+      muzzleRing.position.z = 1.0;
+      pitch.add(muzzleRing);
+      const flash = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20),
+        new THREE.MeshBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+      flash.position.z = 1.05;
+      pitch.add(flash);
+      root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      this.group.add(root);
+      return { side, root, yaw, pitch, recoil: 0, flash };
+    });
+  }
+
+  _buildAimMarkers() {
+    const ring = (color, r) => {
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(r * 0.72, r, 32),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+      const q = quatX(STAGE.angle);
+      const tilt = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+      mesh.quaternion.copy(tilt).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2));
+      this.group.add(mesh);
+      return mesh;
+    };
+    this.reticle = ring(0xffe7a3, 0.6);
+    this.reticleDot = ring(0xffe7a3, 0.14);
+    this.aimRings = [ring(0x7fe3ff, 0.42), ring(0xff9ec4, 0.42)];
+    // Arc preview for the pitcher that fires next.
+    const pts = new Float32Array(24 * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+    this.arc = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: 0xffe7a3, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.55, toneMapped: false }));
+    this.arc.frustumCulled = false;
+    this.group.add(this.arc);
+  }
+
+  // Point the pitchers at their aim points and place the aim markers.
+  updateAim(game, visible) {
+    const markerAt = (mesh, x, lift = 0.02) => {
+      const p = stagePoint(x, LANDING.s, lift);
+      mesh.position.set(p.x, p.y, p.z);
+    };
+    this.reticle.visible = this.reticleDot.visible = visible;
+    markerAt(this.reticle, game.aim.target, 0.03);
+    markerAt(this.reticleDot, game.aim.target, 0.03);
+    for (let i = 0; i < 2; i++) {
+      const pc = this.pitchers[i];
+      const aimX = game.aim.x[i];
+      markerAt(this.aimRings[i], aimX, 0.025);
+      this.aimRings[i].visible = visible;
+      const tgt = stagePoint(aimX, LANDING.s, 0.1);
+      const dx = tgt.x - pc.root.position.x, dz = tgt.z - pc.root.position.z;
+      pc.yaw.rotation.y = Math.atan2(dx, dz);
+      pc.pitch.rotation.x = -0.55;
+      pc.pitch.position.z = -pc.recoil * 0.25;
+    }
+    // Arc for the next shot.
+    const i = game.nextPitcher;
+    const pc = this.pitchers[i];
+    const tgt = stagePoint(game.aim.x[i], LANDING.s, 0.12);
+    const p = pc.root.position;
+    const dx = tgt.x - p.x, dz = tgt.z - p.z, hd = Math.hypot(dx, dz) || 1;
+    const m = { x: p.x + (dx / hd) * PITCHER.barrel, y: p.y + 0.15, z: p.z + (dz / hd) * PITCHER.barrel };
+    const dist = Math.hypot(tgt.x - m.x, tgt.z - m.z);
+    const T = 0.42 + 0.035 * dist;
+    const g = WORLD.gravity;
+    const v = { x: (tgt.x - m.x) / T, y: (tgt.y - m.y) / T - 0.5 * g * T, z: (tgt.z - m.z) / T };
+    const arr = this.arc.geometry.attributes.position.array;
+    for (let k = 0; k < 24; k++) {
+      const t = (k / 23) * T;
+      arr[k * 3] = m.x + v.x * t;
+      arr[k * 3 + 1] = m.y + v.y * t + 0.5 * g * t * t;
+      arr[k * 3 + 2] = m.z + v.z * t;
+    }
+    this.arc.geometry.attributes.position.needsUpdate = true;
+    this.arc.computeLineDistances();
+    this.arc.visible = visible;
+  }
+
+  pitcherFired(i) {
+    const pc = this.pitchers[i];
+    pc.recoil = 1;
+    pc.flash.material.opacity = 1;
   }
 
   _partMesh(p) {
@@ -71,9 +253,7 @@ export class Cabinet {
       else if (p.name === 'stageBack') mat = m.lacquerDark;
       mesh = new THREE.Mesh(g, mat);
     } else {
-      const g = new THREE.CylinderGeometry(p.radius, p.radius, p.halfHeight * 2, 20);
-      mesh = new THREE.Mesh(g, p.name === 'checkerPost' ? m.vermilion : m.chrome);
-      if (p.name === 'checkerPost') this.toriiPosts = (this.toriiPosts || []).concat(mesh);
+      mesh = new THREE.Mesh(new THREE.CylinderGeometry(p.radius, p.radius, p.halfHeight * 2, 20), m.chrome);
     }
     mesh.position.set(...p.pos);
     mesh.quaternion.set(...p.quat);
@@ -82,6 +262,25 @@ export class Cabinet {
     mesh.receiveShadow = true;
     if (p.enabled === false) mesh.visible = false;
     this.group.add(mesh);
+  }
+
+  _boxFrontTexture() {
+    const c = makeCanvas(512, 128);
+    const ctx = c.getContext('2d');
+    ctx.drawImage(makeWoodTexture().image, 0, 0, 512, 128);
+    ctx.fillStyle = 'rgba(40,18,6,0.25)';
+    ctx.fillRect(0, 0, 512, 128);
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(8, 8, 496, 112);
+    ctx.fillStyle = '#f6e3b0';
+    ctx.font = '400 74px "Dela Gothic One", "Hiragino Mincho ProN", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('賽 銭', 256, 68);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   }
 
   _backWallMaterial() {
@@ -133,12 +332,18 @@ export class Cabinet {
         new THREE.MeshBasicMaterial({ color: 0xf0c96a }), [side * (HALF_W + 0.02), 9.05, -6.7], { receive: false });
       this.lamps.push({ mesh: strip, base: new THREE.Color(0xf0c96a), kind: 'strip' });
     }
-    // Front panel below the field edge, with the payout chute slot.
-    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 6, 1.4), m.lacquer, [0, -3.25, FRONT_Z + 1.2]);
+    // Front edge trim.
     const lip = add(new THREE.CylinderGeometry(0.09, 0.09, HALF_W * 2, 16), m.gold, [0, -0.02, FRONT_Z]);
     lip.rotation.z = Math.PI / 2;
-    // Payout chute: dark slot just under the front edge.
-    add(new THREE.BoxGeometry(HALF_W * 2, 0.1, 0.5), m.pit, [0, -0.25, FRONT_Z + 0.3], { receive: false });
+    // The well under the edge where the offering box rides: a dark pit with
+    // a gold rail, and a low front panel below the box.
+    const pitDepth = 3.2;
+    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 0.2, pitDepth + 1), m.pit, [0, -6.2, FRONT_Z + pitDepth / 2], { receive: false });
+    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 2.4, 0.4), m.lacquer, [0, BOX.floorY - 1.55, BOX.z + BOX.depth / 2 + 0.75]);
+    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 0.12, 0.42), m.gold, [0, BOX.floorY - 0.32, BOX.z + BOX.depth / 2 + 0.75]);
+    const rail = add(new THREE.CylinderGeometry(0.07, 0.07, HALF_W * 2 + 1.6, 12), m.gold, [0, BOX.floorY - 0.22, BOX.z]);
+    rail.rotation.z = Math.PI / 2;
+    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 0.25, 0.25), m.lacquerDark, [0, -0.85, FRONT_Z - 0.05]);
     // Roof with the title sign.
     add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 1.6, 4), m.lacquerDark, [0, 13.6, -11.6]);
     const sign = add(new THREE.PlaneGeometry(HALF_W * 2 + 1, 1.25),
@@ -308,10 +513,22 @@ export class Cabinet {
     this.toriiFlash = 1;
   }
 
-  update(dt, pusherFront, jackpot = false) {
+  update(dt, pusherFront, jackpot = false, fever = false) {
     this.time += dt;
     const t = this.time;
+    const w = this.world;
     this.pusher.position.set(0, PUSHER.height / 2, pusherFront - PUSHER.depth / 2);
+    w.pins.forEach((p, i) => { this.pinMeshes[i].position.x = p.x; });
+    this.torii.position.x = w.toriiX;
+    if (Math.abs(this.boxBuiltWidth - w.boxWidth) > 1e-3) this._buildBox();
+    this.boxGroup.position.x = w.boxX;
+    if (this.boxFlash > 0) this.boxFlash = Math.max(0, this.boxFlash - dt * 3);
+    this.boxGlow.material.opacity = 0.08 + (this.boxFlash || 0) * 0.6;
+    for (const pc of this.pitchers) {
+      if (pc.recoil > 0) pc.recoil = Math.max(0, pc.recoil - dt * 6);
+      pc.flash.material.opacity = Math.max(0, pc.flash.material.opacity - dt * 8);
+    }
+    if (fever) jackpot = true;
     if (this.flashTimer > 0) this.flashTimer -= dt;
     const flashing = this.flashTimer > 0;
     const fast = flashing || jackpot;

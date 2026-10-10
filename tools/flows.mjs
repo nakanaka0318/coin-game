@@ -1,5 +1,5 @@
 // Exercises the less common paths: talismans, jackpot, shop buy/sell,
-// menu and quality switch, save + reload + continue, game over, free play.
+// menu and quality switch, save + reload + continue, game over, moon shrine,\n// free play.
 //   node tools/flows.mjs <url> <outDir>
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
@@ -16,7 +16,7 @@ const ready = () => page.waitForFunction(() => window.__ready === true, null, { 
 const click = async (name) => { await page.getByRole('button', { name }).first().click(); await page.waitForTimeout(300); };
 const ff = (n, dropEvery = 0) => page.evaluate(({ n, dropEvery }) => {
   const g = window.__game;
-  for (let i = 0; i < n; i++) { if (dropEvery && i % dropEvery === 0 && g.canDrop()) g.drop(0.6); g.world.step(); g.update(1 / 60); }
+  for (let i = 0; i < n; i++) { if (dropEvery && i % dropEvery === 0) { g.setAim(0.6); g.requestFire(); } g.world.step(); g.update(1 / 60); }
 }, { n, dropEvery });
 const step = async (label, fn) => { try { await fn(); console.log('ok  ', label); } catch (e) { console.log('FAIL', label, e.message.split('\n')[0]); } };
 
@@ -29,7 +29,7 @@ await step('use quake talisman from rail', async () => {
   if (n !== 0) throw new Error('talisman not consumed');
 });
 await step('forced jackpot', async () => {
-  await page.evaluate(() => { const g = window.__game; g._drawOutcome = () => 'seven'; g.slot.stock = 1; });
+  await page.evaluate(() => { const g = window.__game; g._drawOutcome = () => 'seven'; g._addStock(true); });
   await ff(320);
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${out}/f-jackpot.png` });
@@ -71,12 +71,22 @@ await step('dawn + shop buy + sell', async () => {
   await click('夜をはじめる');
 });
 await step('game over', async () => {
-  await page.evaluate(() => { const g = window.__game; g.night.dropsLeft = 0; g.bank = 0; g.night.grace = 0.01; g.rain = []; g.slot.stock = 0; g.slot.spinning = false; });
+  await page.evaluate(() => { const g = window.__game; g.night.dropsLeft = 0; g.bank = 0; g.night.grace = 0.01; g.rain = []; g.slot.queue = []; g.fever = 0; g.slot.spinning = false; });
   await ff(30);
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${out}/f-over.png` });
   if (!(await page.getByRole('button', { name: 'もう一度' }).count())) throw new Error('no game over screen');
   await click('タイトルへ');
+});
+await step('moon shrine buy', async () => {
+  await click('月の社');
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('moon-rabbit-pusher:v1') || '{}'));
+  await page.locator('button.btn.gold:not([disabled])').first().click();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${out}/f-shrine.png` });
+  const levels = await page.evaluate(() => Object.values(window.__game.meta).reduce((a, b) => a + b, 0));
+  if (levels < 1) throw new Error('nothing bought ' + JSON.stringify(before.record || {}));
+  await click('もどる');
 });
 await step('free play + borrow', async () => {
   await click('フリープレイ');

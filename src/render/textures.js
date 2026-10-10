@@ -131,7 +131,23 @@ export function makeCoinFace(kind, size = 256) {
     ctx.arc(c + Math.cos(a) * size * 0.385, c + Math.sin(a) * size * 0.385, size * 0.012, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (kind === 'gold') {
+  if (kind === 'oban') {
+    // Hammered texture lines with the characters 大判.
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = size * 0.012;
+    for (let i = -6; i <= 6; i++) {
+      ctx.beginPath();
+      ctx.moveTo(c - size * 0.33, c + i * size * 0.05);
+      ctx.lineTo(c + size * 0.33, c + i * size * 0.05);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#fff';
+    ctx.font = `900 ${size * 0.26}px "Dela Gothic One", "Hiragino Mincho ProN", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('大', c, c - size * 0.14);
+    ctx.fillText('判', c, c + size * 0.15);
+  } else if (kind === 'gold') {
     ctx.fillStyle = '#ddd';
     ctx.font = `900 ${size * 0.42}px "Dela Gothic One", "Hiragino Mincho ProN", serif`;
     ctx.textAlign = 'center';
@@ -151,7 +167,7 @@ export function makeCoinFace(kind, size = 256) {
     drawRabbit(ctx, c + size * 0.06, c + size * 0.04, size * 0.36);
   }
   const blurred = blurCanvas(hc, size / 200);
-  const normal = heightToNormal(blurred, kind === 'gold' ? 3.2 : 2.6);
+  const normal = heightToNormal(blurred, kind === 'silver' ? 2.6 : 3.2);
 
   const color = makeCanvas(size, size);
   const cctx = color.getContext('2d');
@@ -222,7 +238,7 @@ export function makeSeigaiha(size = 1024, { bg = PALETTE.indigo, line = PALETTE.
 
 // Stage plate: night sky with drifting clouds and stars, plus a guide arc
 // pointing at the torii checker at the lip.
-export function makeStageArt(w = 1024, h = 512) {
+export function makeStageArt(w = 1024, h = 512, felt = null) {
   const c = makeCanvas(w, h);
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -247,15 +263,33 @@ export function makeStageArt(w = 1024, h = 512) {
     ctx.roundRect(x0 * w, yy - r, (x1 - x0) * w, r * 2, r);
     ctx.fill();
   }
-  // Guide arrows toward the centre
-  ctx.strokeStyle = 'rgba(240,201,106,0.5)';
-  ctx.lineWidth = 4;
-  ctx.setLineDash([14, 12]);
-  ctx.beginPath();
-  ctx.moveTo(w * 0.5, h * 0.12);
-  ctx.lineTo(w * 0.5, h * 0.97);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  // Felt landing strip where the pitchers' medals come down.
+  if (felt) {
+    const y0 = felt[0] * h, y1 = felt[1] * h;
+    const fg = ctx.createLinearGradient(0, y0, 0, y1);
+    fg.addColorStop(0, '#5a1420');
+    fg.addColorStop(1, '#7a1d2a');
+    ctx.fillStyle = fg;
+    ctx.fillRect(0, y0, w, y1 - y0);
+    for (let i = 0; i < 2400; i++) {
+      ctx.fillStyle = `rgba(255,${180 + rnd() * 60},${160 + rnd() * 60},${rnd() * 0.08})`;
+      ctx.fillRect(rnd() * w, y0 + rnd() * (y1 - y0), 2, 2);
+    }
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, y0); ctx.lineTo(w, y0);
+    ctx.moveTo(0, y1); ctx.lineTo(w, y1);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(240,201,106,0.35)';
+    ctx.setLineDash([10, 10]);
+    ctx.lineWidth = 2;
+    const ya = felt[2] * h;
+    ctx.beginPath();
+    ctx.moveTo(0, ya); ctx.lineTo(w, ya);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
@@ -358,5 +392,33 @@ export function makeBackdrop(w = 1024, h = 512) {
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Warm wood grain for the offering box.
+export function makeWoodTexture(w = 256, h = 256) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#8a5a32';
+  ctx.fillRect(0, 0, w, h);
+  let seed = 5;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < h; y += 2) {
+    const v = Math.sin(y * 0.09 + Math.sin(y * 0.013) * 3) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(${60 + v * 40},${32 + v * 20},${14 + v * 10},${0.25 + rnd() * 0.2})`;
+    ctx.fillRect(0, y, w, 2);
+  }
+  for (let i = 0; i < 18; i++) {
+    ctx.strokeStyle = `rgba(50,24,10,${0.15 + rnd() * 0.2})`;
+    ctx.lineWidth = 1 + rnd() * 2;
+    ctx.beginPath();
+    const y = rnd() * h;
+    ctx.moveTo(0, y);
+    ctx.bezierCurveTo(w * 0.3, y + rnd() * 20 - 10, w * 0.7, y + rnd() * 20 - 10, w, y + rnd() * 10 - 5);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }

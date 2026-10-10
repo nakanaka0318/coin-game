@@ -17,7 +17,8 @@ export class AudioEngine {
     this.ctx = null;
     this.enabled = true;
     this.musicOn = true;
-    this.volume = 0.8;
+    // Slider values 0-100.
+    this.levels = { master: 80, sfx: 80, bgm: 50 };
     this.lastImpact = 0;
     this.impactBudget = 0;
     this.voices = 0;
@@ -36,28 +37,48 @@ export class AudioEngine {
     if (!AC) return;
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
-    this.master.gain.value = this.enabled ? this.volume : 0;
+    this.master.gain.value = this._masterGain();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     this.master.connect(comp).connect(ctx.destination);
     this.sfx = ctx.createGain();
+    this.sfx.gain.value = this._sfxGain();
     this.sfx.connect(this.master);
     this.music = ctx.createGain();
-    this.music.gain.value = this.musicOn ? 0.32 : 0;
+    this.music.gain.value = this._musicGain();
     this.music.connect(this.master);
     this._buildBuffers();
     this._startMusic();
   }
 
+  // Gains: master 100 = 1.0; SFX 80 = the original level; BGM 100 = the
+  // original music level (the default 50 is half of it).
+  _masterGain() { return this.enabled ? this.levels.master / 100 : 0; }
+  _sfxGain() { return (this.levels.sfx / 80) * 1.0; }
+  _musicGain() { return this.musicOn ? (this.levels.bgm / 100) * 0.32 : 0; }
+
+  _applyGains() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(this._masterGain(), t, 0.05);
+    this.sfx.gain.setTargetAtTime(this._sfxGain(), t, 0.05);
+    this.music.gain.setTargetAtTime(this._musicGain(), t, 0.2);
+  }
+
+  setLevels(levels) {
+    Object.assign(this.levels, levels);
+    this._applyGains();
+  }
+
   setEnabled(on) {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? this.volume : 0, this.ctx.currentTime, 0.05);
+    this._applyGains();
   }
 
   setMusic(on) {
     this.musicOn = on;
-    if (this.music) this.music.gain.setTargetAtTime(on ? 0.32 : 0, this.ctx.currentTime, 0.2);
+    this._applyGains();
   }
 
   _buffer(seconds, fill) {
@@ -225,9 +246,54 @@ export class AudioEngine {
     }
   }
 
-  drop(x) {
-    this._play(this.plates[1], { gain: 0.18, rate: 1.4, pan: x / 8 });
-    this._tone(1800, 0.06, { type: 'triangle', gain: 0.05, slide: 1.6 });
+  fire(side) {
+    const pan = side === 0 ? -0.7 : 0.7;
+    this._play(this.taiko, { gain: 0.22, rate: 2.6, pan });
+    this._tone(520, 0.12, { type: 'triangle', gain: 0.06, slide: 2.2, pan });
+  }
+
+  landed(x) {
+    this._play(this.knock, { gain: 0.08, rate: 1.4, pan: x / 8 });
+  }
+
+  boxCatch(value, x) {
+    if (!this.ctx) return;
+    this._play(this.knock, { gain: 0.22, rate: 0.9, pan: x / 8 });
+    this._play(this.clinks[(Math.random() * this.clinks.length) | 0], { gain: 0.3, rate: 1.05, pan: x / 8 });
+  }
+
+  stock(color) {
+    const map = { blue: [10], green: [10, 12], red: [10, 12, 14], gold: [12, 14, 15, 17], rainbow: [12, 14, 15, 17, 19] };
+    const seq = map[color];
+    if (!seq) { this._tone(1600, 0.08, { type: 'sine', gain: 0.05 }); return; }
+    seq.forEach((st, i) => this.pluck(st, { gain: 0.38, when: i * 0.06 }));
+    if (color === 'gold' || color === 'rainbow') this._play(this.rin, { gain: 0.35, rate: 1.4, when: 0.2 });
+  }
+
+  superReach(hot) {
+    // Heartbeat taiko under a slow rising tone.
+    for (let i = 0; i < 8; i++) {
+      this._play(this.taiko, { gain: hot ? 0.45 : 0.3, rate: 0.85, when: i * 0.55 });
+      this._play(this.taiko, { gain: hot ? 0.3 : 0.2, rate: 1.0, when: i * 0.55 + 0.16 });
+    }
+    this._tone(180, 4.2, { type: 'sawtooth', gain: hot ? 0.07 : 0.045, slide: hot ? 3.2 : 2.2 });
+  }
+
+  premium() {
+    [5, 7, 9, 10, 12, 14, 15, 17].forEach((st, i) => this.pluck(st, { gain: 0.4, when: i * 0.05 }));
+    this._play(this.rin, { gain: 0.5, rate: 1.2 });
+  }
+
+  revival() {
+    this._play(this.taiko, { gain: 0.8, rate: 0.7 });
+    [12, 15, 17, 19].forEach((st, i) => this.pluck(st, { gain: 0.45, when: 0.1 + i * 0.07 }));
+    this._play(this.rin, { gain: 0.45, rate: 1.5, when: 0.3 });
+  }
+
+  fever() {
+    const seq = [5, 7, 9, 12, 9, 12, 14, 17, 14, 17, 19, 21];
+    seq.forEach((st, i) => this.pluck(st, { gain: 0.45, when: i * 0.07 }));
+    for (let i = 0; i < 4; i++) this._play(this.taiko, { gain: 0.55, rate: 1.1, when: i * 0.18 });
   }
 
   payout(value, x) {
@@ -246,6 +312,10 @@ export class AudioEngine {
 
   lost(x) {
     this._tone(220, 0.25, { type: 'sine', gain: 0.07, slide: 0.5, pan: x / 8 });
+  }
+
+  missed(x) {
+    this._tone(330, 0.18, { type: 'sine', gain: 0.05, slide: 0.6, pan: x / 8 });
   }
 
   checker() {
@@ -349,6 +419,7 @@ export class AudioEngine {
   }
 
   buy() {
+    if (!this.ctx) return;
     this._play(this.clinks[1], { gain: 0.3, rate: 1 });
     this._play(this.clinks[3], { gain: 0.3, rate: 1.2, when: 0.06 });
     this.pluck(12, { gain: 0.3, when: 0.05 });

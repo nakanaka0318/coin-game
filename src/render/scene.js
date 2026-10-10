@@ -9,8 +9,8 @@ import { makeBackdrop } from './textures.js';
 // Camera presets: target point, elevation (deg), extent that must fit on
 // screen (width, height in world units around the target).
 const VIEWS = {
-  overview: { target: [0, 3.9, -3.4], elev: 34, width: 16.5, height: 19.5, yaw: 0 },
-  field: { target: [0, 0.8, -0.6], elev: 52, width: 14.5, height: 12.5, yaw: 0 },
+  overview: { target: [0, 1.6, -1.6], elev: 38, width: 16.8, height: 24.5, yaw: 0 },
+  field: { target: [0, -0.6, 1.4], elev: 46, width: 15, height: 13.5, yaw: 0 },
   stage: { target: [0, 5.2, -8.4], elev: 24, width: 14, height: 11, yaw: 0 },
 };
 

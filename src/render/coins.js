@@ -1,7 +1,7 @@
 // Instanced rendering of every dynamic body (medals and balls).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { COIN, GOLD_COIN, BALL } from '../sim/config.js';
+import { COIN, GOLD_COIN, OBAN, BALL } from '../sim/config.js';
 import { KIND } from '../sim/physics.js';
 import { makeCoinFace, makeReededEdge } from './textures.js';
 
@@ -35,6 +35,7 @@ export class CoinRenderer {
 
     const silverFace = makeCoinFace('silver');
     const goldFace = makeCoinFace('gold');
+    const obanFace = makeCoinFace('oban');
     const mk = (color, face, rough) => {
       const faceMat = new THREE.MeshStandardMaterial({
         color, metalness: 0.92, roughness: rough,
@@ -50,13 +51,16 @@ export class CoinRenderer {
       coinGeometry(COIN.radius, COIN.halfHeight), mk(0xe9ecf2, silverFace, 0.3), capacity);
     this.gold = new THREE.InstancedMesh(
       coinGeometry(GOLD_COIN.radius, GOLD_COIN.halfHeight), mk(0xf5c55a, goldFace, 0.22), 200);
+    this.oban = new THREE.InstancedMesh(
+      coinGeometry(OBAN.radius, OBAN.halfHeight), mk(0xffb84a, obanFace, 0.18), 60);
     this.ball = new THREE.InstancedMesh(
       new THREE.SphereGeometry(BALL.radius, 40, 28),
       new THREE.MeshPhysicalMaterial({
         color: 0xffe9a8, metalness: 0.2, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05,
         emissive: 0xd08a2a, emissiveIntensity: 0.35, iridescence: 0.4,
       }), 16);
-    for (const m of [this.silver, this.gold, this.ball]) {
+    this.all = [this.silver, this.gold, this.ball, this.oban];
+    for (const m of this.all) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.castShadow = true;
       m.receiveShadow = true;
@@ -64,20 +68,20 @@ export class CoinRenderer {
       m.count = 0;
       scene.add(m);
     }
-    this.meshes = { [KIND.SILVER]: this.silver, [KIND.GOLD]: this.gold, [KIND.BALL]: this.ball };
+    this.meshes = { [KIND.SILVER]: this.silver, [KIND.GOLD]: this.gold, [KIND.BALL]: this.ball, [KIND.OBAN]: this.oban };
   }
 
   setShadows(on) {
-    for (const m of [this.silver, this.gold, this.ball]) {
+    for (const m of this.all) {
       m.castShadow = on;
       m.receiveShadow = on;
     }
   }
 
   update(world) {
-    const counts = [0, 0, 0];
-    const arrays = [this.silver.instanceMatrix.array, this.gold.instanceMatrix.array, this.ball.instanceMatrix.array];
-    const caps = [this.silver.instanceMatrix.count, this.gold.instanceMatrix.count, this.ball.instanceMatrix.count];
+    const counts = [0, 0, 0, 0];
+    const arrays = this.all.map((m) => m.instanceMatrix.array);
+    const caps = this.all.map((m) => m.instanceMatrix.count);
     const { pos, quat, kind } = world;
     for (let i = 0; i < world.highWater; i++) {
       const k = kind[i];
@@ -97,11 +101,9 @@ export class CoinRenderer {
       te[o + 8] = xz + wy; te[o + 9] = yz - wx; te[o + 10] = 1 - (xx + yy); te[o + 11] = 0;
       te[o + 12] = pos[i * 3]; te[o + 13] = pos[i * 3 + 1]; te[o + 14] = pos[i * 3 + 2]; te[o + 15] = 1;
     }
-    this.silver.count = counts[0];
-    this.gold.count = counts[1];
-    this.ball.count = counts[2];
-    this.silver.instanceMatrix.needsUpdate = true;
-    this.gold.instanceMatrix.needsUpdate = true;
-    this.ball.instanceMatrix.needsUpdate = true;
+    this.all.forEach((m, k) => {
+      m.count = counts[k];
+      m.instanceMatrix.needsUpdate = true;
+    });
   }
 }

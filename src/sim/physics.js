@@ -1,9 +1,14 @@
 // Rapier wrapper for the medal pusher. Runs in the browser and in Node
 // (tools/sim-test.mjs drives it headlessly for tuning).
-import { COIN, GOLD_COIN, BALL, WORLD, PUSHER, MAT } from './config.js';
-import { buildMachineParts, checkerPostPos } from './machine.js';
+import {
+  COIN, GOLD_COIN, OBAN, BALL, WORLD, PUSHER, MAT, STAGE, BOX, HALF_W,
+  PIN_MOTION, TORII_MOTION, stagePoint, stagePins,
+} from './config.js';
+import { buildMachineParts, checkerPostPos, quatX } from './machine.js';
 
-export const KIND = { SILVER: 0, GOLD: 1, BALL: 2 };
+export const KIND = { SILVER: 0, GOLD: 1, BALL: 2, OBAN: 3 };
+
+const COIN_SPECS = { [KIND.SILVER]: COIN, [KIND.GOLD]: GOLD_COIN, [KIND.OBAN]: OBAN };
 
 export class PhysicsWorld {
   constructor(RAPIER, { capacity = 1200, onImpact = null } = {}) {
@@ -41,8 +46,22 @@ export class PhysicsWorld {
     this.phase = 0;
     this.lastStepMs = 0;
 
+    // Moving parts: pin rows, torii and the offering box.
+    this.pinRowOffset = PIN_MOTION.map(() => 0);
+    this.pinSpeed = 1;
+    this.toriiX = 0;
+    this.toriiSpeed = 1;
+    this.checkerHalfGap = STAGE.checkerHalfGap;
+    this.boxX = 0;
+    this.boxTargetX = 0;
+    this.boxWidth = BOX.baseWidth;
+    this._moverT = 0;
+
     this._buildStatic();
     this._buildPusher();
+    this._buildPins();
+    this._buildTorii();
+    this._buildBox();
   }
 
   _buildStatic() {
@@ -78,6 +97,99 @@ export class PhysicsWorld {
     this.colliderMat.set(c.handle, MAT.PUSHER);
   }
 
+  _kinematic(x, y, z, q) {
+    const desc = this.R.RigidBodyDesc.kinematicPositionBased().setTranslation(x, y, z);
+    if (q) desc.setRotation(q);
+    return this.world.createRigidBody(desc);
+  }
+
+  _buildPins() {
+    const R = this.R;
+    const qa = quatX(STAGE.angle);
+    const q = { x: qa[0], y: qa[1], z: qa[2], w: qa[3] };
+    this.pins = [];
+    const rows = [...new Set(stagePins().map((p) => p.s))];
+    for (const p of stagePins()) {
+      const w = stagePoint(p.x, p.s, STAGE.pinHeight / 2);
+      const body = this._kinematic(w.x, w.y, w.z, q);
+      const c = this.world.createCollider(
+        R.ColliderDesc.cylinder(STAGE.pinHeight / 2, STAGE.pinRadius)
+          .setFriction(0.05).setFrictionCombineRule(R.CoefficientCombineRule.Min).setRestitution(0.4), body);
+      this.colliderMat.set(c.handle, MAT.PIN);
+      (this.named.pin ||= []).push(c);
+      this.pins.push({ body, base: w, row: rows.indexOf(p.s), x: w.x });
+    }
+  }
+
+  _buildTorii() {
+    const R = this.R;
+    this.toriiPosts = [-1, 1].map((side) => {
+      const p = checkerPostPos(side, this.checkerHalfGap, 0);
+      const body = this._kinematic(p.x, p.y, p.z);
+      const c = this.world.createCollider(
+        R.ColliderDesc.cylinder(0.5, STAGE.checkerPostRadius)
+          .setFriction(0.05).setFrictionCombineRule(R.CoefficientCombineRule.Min).setRestitution(0.3), body);
+      this.colliderMat.set(c.handle, MAT.PIN);
+      return { body, side };
+    });
+  }
+
+  // The offering box is an open-top kinematic box; rebuilt when resized.
+  _buildBox() {
+    const R = this.R;
+    if (!this.box) this.box = this._kinematic(this.boxX, BOX.floorY, BOX.z);
+    for (const c of this.boxColliders || []) this.world.removeCollider(c, false);
+    const w = this.boxWidth / 2, d = BOX.depth / 2, t = BOX.wall, hgt = BOX.height;
+    const parts = [
+      [w + t, t / 2, d + t, 0, -t / 2, 0], // floor
+      [w + t, hgt / 2, t / 2, 0, hgt / 2, -d - t / 2], // back
+      [w + t, hgt / 2, t / 2, 0, hgt / 2, d + t / 2], // front
+      [t / 2, hgt / 2, d, -w - t / 2, hgt / 2, 0], // left
+      [t / 2, hgt / 2, d, w + t / 2, hgt / 2, 0], // right
+    ];
+    this.boxColliders = parts.map(([hx, hy, hz, x, y, z]) => {
+      const c = this.world.createCollider(
+        R.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(0.6).setRestitution(0.05), this.box);
+      this.colliderMat.set(c.handle, MAT.BOX);
+      return c;
+    });
+  }
+
+  setBoxWidth(width) {
+    if (Math.abs(width - this.boxWidth) < 1e-3) return;
+    this.boxWidth = width;
+    this.boxX = this.clampBoxX(this.boxX);
+    this._buildBox();
+  }
+
+  // Box centre limits so its walls stay under the field.
+  clampBoxX(x) {
+    const lim = HALF_W + 0.3 - this.boxWidth / 2;
+    return Math.max(-lim, Math.min(lim, x));
+  }
+
+  setBoxTarget(x) {
+    this.boxTargetX = this.clampBoxX(x);
+  }
+
+  _moveMovers(dt) {
+    this._moverT += dt;
+    const t = this._moverT;
+    PIN_MOTION.forEach((m, i) => {
+      this.pinRowOffset[i] = m.amp * Math.sin(2 * Math.PI * (t * this.pinSpeed / m.period + m.phase));
+    });
+    for (const p of this.pins) {
+      p.x = p.base.x + this.pinRowOffset[p.row];
+      p.body.setNextKinematicTranslation({ x: p.x, y: p.base.y, z: p.base.z });
+    }
+    this.toriiX = TORII_MOTION.amp * Math.sin(2 * Math.PI * t * this.toriiSpeed / TORII_MOTION.period);
+    for (const post of this.toriiPosts) {
+      post.body.setNextKinematicTranslation(checkerPostPos(post.side, this.checkerHalfGap, this.toriiX));
+    }
+    this.box.setNextKinematicTranslation({ x: this.boxTargetX, y: BOX.floorY, z: BOX.z });
+    this.boxX = this.boxTargetX;
+  }
+
   // --- machine tweaks used by charms ---------------------------------------
 
   setEnabled(name, on) {
@@ -89,8 +201,7 @@ export class PhysicsWorld {
   }
 
   setCheckerHalfGap(halfGap) {
-    const posts = this.named.checkerPost || [];
-    posts.forEach((c, i) => c.setTranslation(checkerPostPos(i === 0 ? -1 : 1, halfGap)));
+    this.checkerHalfGap = halfGap;
   }
 
   // --- dynamic bodies -----------------------------------------------------
@@ -110,7 +221,7 @@ export class PhysicsWorld {
       cdesc = R.ColliderDesc.ball(BALL.radius).setDensity(BALL.density)
         .setFriction(BALL.friction).setRestitution(BALL.restitution);
     } else {
-      const spec = kind === KIND.GOLD ? GOLD_COIN : COIN;
+      const spec = COIN_SPECS[kind];
       desc.setLinearDamping(COIN.linearDamping).setAngularDamping(COIN.angularDamping);
       cdesc = R.ColliderDesc.cylinder(spec.halfHeight, spec.radius).setDensity(spec.density)
         .setFriction(COIN.friction).setRestitution(COIN.restitution);
@@ -165,6 +276,18 @@ export class PhysicsWorld {
     return b ? b.mass() : 0;
   }
 
+  setVelocity(slot, vx, vy, vz) {
+    const b = this.bodies[slot];
+    if (!b) return;
+    b.setLinvel({ x: vx, y: vy, z: vz }, true);
+    this.vel[slot * 3] = vx; this.vel[slot * 3 + 1] = vy; this.vel[slot * 3 + 2] = vz;
+  }
+
+  setSpin(slot, wx, wy, wz) {
+    const b = this.bodies[slot];
+    if (b) b.setAngvel({ x: wx, y: wy, z: wz }, true);
+  }
+
   // --- simulation ---------------------------------------------------------
 
   pusherFrontAt(phase) {
@@ -179,6 +302,7 @@ export class PhysicsWorld {
     this.phase = (this.phase + (dt * this.pusherSpeed) / PUSHER.period) % 1;
     const front = this.pusherFrontAt(this.phase);
     this.pusher.setNextKinematicTranslation({ x: 0, y: PUSHER.height / 2, z: front - PUSHER.depth / 2 });
+    this._moveMovers(dt);
     this.world.step(this.events);
     this.time += dt;
     this.pusherFront = front;
@@ -234,16 +358,16 @@ export class PhysicsWorld {
 
   _matOfSlot(slot) {
     const k = this.kind[slot];
-    return k === KIND.GOLD ? MAT.GOLD : k === KIND.BALL ? MAT.BALL : MAT.COIN;
+    return k === KIND.GOLD || k === KIND.OBAN ? MAT.GOLD : k === KIND.BALL ? MAT.BALL : MAT.COIN;
   }
 
   // --- save / load --------------------------------------------------------
 
-  snapshot() {
+  snapshot(skip = null) {
     const r = (v) => Math.round(v * 1000) / 1000;
     const bodies = [];
     for (let i = 0; i < this.highWater; i++) {
-      if (this.kind[i] < 0) continue;
+      if (this.kind[i] < 0 || (skip && skip(i))) continue;
       const p = i * 3, q = i * 4;
       bodies.push([this.kind[i], r(this.pos[p]), r(this.pos[p + 1]), r(this.pos[p + 2]),
         r(this.quat[q]), r(this.quat[q + 1]), r(this.quat[q + 2]), r(this.quat[q + 3])]);

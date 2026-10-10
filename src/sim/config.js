@@ -18,6 +18,13 @@ export const GOLD_COIN = {
   density: 1.1,
 };
 
+// 大判: a big, very valuable gold coin (unlocked at the moon shrine).
+export const OBAN = {
+  radius: 0.74,
+  halfHeight: 0.085,
+  density: 1.2,
+};
+
 export const BALL = {
   radius: 0.62,
   density: 1.4,
@@ -71,28 +78,59 @@ export const STAGE = {
   pinHeight: 1.1,
   // Checker gate: two posts at the lip; medals passing between them
   // trigger a slot spin.
-  checkerHalfGap: 0.66,
+  checkerHalfGap: 0.56,
   checkerPostRadius: 0.14,
 };
 
-export const DROP = {
-  y: 8.2,
-  z: -10.6,
-  minX: -HALF_W + 0.75,
-  maxX: HALF_W - 0.75,
+// Pitchers on both side walls lob medals onto the felt landing strip at
+// the top of the stage. The player moves one aim point along the strip.
+export const PITCHER = {
+  x: HALF_W + 0.15, // mounted at ±x on the side walls
+  y: 8.3,
+  z: -8.4,
+  barrel: 0.95, // pivot to muzzle
 };
+export const LANDING = {
+  s: 1.05, // aim line, in stage coordinates
+  sMin: 0.25, // felt strip that soaks up a lobbed medal's speed
+  sMax: 1.9,
+};
+export const AIM = {
+  minX: -HALF_W + 0.8,
+  maxX: HALF_W - 0.8,
+};
+
+// Pin rows and the torii sway from side to side.
+export const PIN_MOTION = [
+  { amp: 1.2, period: 3.6, phase: 0 },
+  { amp: 1.0, period: 2.7, phase: 0.33 },
+  { amp: 0.95, period: 4.4, phase: 0.7 },
+];
+export const TORII_MOTION = { amp: 2.4, period: 12 };
+
+// 賽銭箱 (offering box) under the front edge. Only medals that land in it
+// are paid out; it slides along a rail to meet falling medals.
+export const BOX = {
+  floorY: -3.05, // top of the box floor
+  z: FRONT_Z + 0.85, // centre along z
+  depth: 1.95, // inner size along z
+  height: 1.1, // wall height above the floor
+  wall: 0.12,
+  baseWidth: 2.6, // inner width before upgrades
+  baseSpeed: 2.2, // units per second before upgrades
+};
+// Medals that miss the box fall into the dark below and are removed here.
+export const PIT_Y = -5.5;
 
 // Where payout rain and bonus medals are released.
 export const RAIN = {
   y: 7.5,
   minX: -HALF_W + 0.8,
   maxX: HALF_W - 0.8,
-  minZ: -1.8,
-  maxZ: 2.6,
+  minZ: -1.2,
+  maxZ: 3.1,
 };
 
-// Removal thresholds.
-export const KILL_Y = -1.6;
 
 export const LAYERS = {
   NON_MOVING: 0,
@@ -109,6 +147,7 @@ export const MAT = {
   GOLD: 11,
   BALL: 12,
   PUSHER: 13,
+  BOX: 14,
 };
 
 // Stage-local coordinates: s runs down the slope from the top (0) to the lip

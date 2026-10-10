@@ -2,7 +2,7 @@
 // event messages, drawn on a canvas used as a texture.
 import * as THREE from 'three';
 import { SYMBOLS } from '../game/data.js';
-import { makeCanvas, drawRabbit, PALETTE } from './textures.js';
+import { makeCanvas, drawRabbit, drawMochiRabbit, PALETTE } from './textures.js';
 
 const W = 1024, H = 512;
 const REEL_W = 236, REEL_H = 270, REEL_Y = 118;
@@ -135,24 +135,26 @@ export class LcdDisplay {
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 4;
+    this._makeSymbols();
+    this.time = 0;
+    this.messages = [];
+    this.reelStopT = [0, 0, 0];
+    this.reelPos = [0, 3.3, 6.6];
+    this.display = [0, 3, 1];
+    this.dirty = true;
+  }
+
+  _makeSymbols() {
     this.symbols = SYMBOLS.map((sym) => {
       const c = makeCanvas(SYM, SYM);
       drawSymbol(c.getContext('2d'), sym.id, SYM);
       return c;
     });
-    this.time = 0;
-    this.messages = [];
-    this.reelStopT = [0, 0, 0];
-    this.display = [0, 3, 1];
+  }
+
+  redrawSymbols() {
+    this._makeSymbols();
     this.dirty = true;
-    this.redrawSymbols = () => {
-      this.symbols = SYMBOLS.map((sym) => {
-        const c = makeCanvas(SYM, SYM);
-        drawSymbol(c.getContext('2d'), sym.id, SYM);
-        return c;
-      });
-      this.dirty = true;
-    };
   }
 
   message(text, { sub = '', color = PALETTE.gold, seconds = 2.2, big = false } = {}) {
@@ -168,29 +170,99 @@ export class LcdDisplay {
   draw(dt, game) {
     this.time += dt;
     const sl = game.slot;
-    const animating = sl.spinning || this.messages.length || game.timers.double > 0 || (this.jpFlash || 0) > 0;
+    const fever = game.fever > 0 || (sl.spinning && sl.inFever);
+    const animating = sl.spinning || fever || this.messages.length || game.timers.double > 0 || sl.queue.some((e) => e.color !== 'white');
     this._idleT = (this._idleT || 0) + dt;
     if (!animating && !this.dirty && this._idleT < 0.25) return;
+    const frameDt = this._idleT;
     this._idleT = 0;
     this.dirty = false;
     const ctx = this.ctx;
     const t = this.time;
+    const pres = sl.spinning ? sl.presentation : null;
+    const crawling = (pres === 'super' || pres === 'revival') && sl.stopped[1] && !sl.stopped[2];
 
-    // Background
+    // Reel motion: integrate speed so the third reel can slow to a crawl.
+    for (let i = 0; i < 3; i++) {
+      if (!sl.spinning || sl.stopped[i]) continue;
+      let speed = 13;
+      if (i === 2 && crawling) {
+        const k = Math.min(1, (sl.t - sl.stopAt[1]) / (sl.stopAt[2] - sl.stopAt[1]));
+        speed = 13 * Math.pow(1 - k, 1.6) + 1.3;
+      }
+      if (pres === 'premium') speed = 6;
+      this.reelPos[i] = (this.reelPos[i] + speed * frameDt) % STRIP.length;
+    }
+    if (pres === 'premium') { this.reelPos[1] = this.reelPos[0]; this.reelPos[2] = this.reelPos[0]; }
+
+    this._background(ctx, t, fever, pres, crawling, sl);
+    this._header(ctx, t, game, fever);
+    for (let i = 0; i < 3; i++) this._drawReel(ctx, i, sl, t, pres, crawling);
+    this._lamps(ctx, t, game);
+    this._banner(ctx, t, sl, pres, crawling);
+    this._messages(ctx, t);
+    this.texture.needsUpdate = true;
+  }
+
+  _background(ctx, t, fever, pres, crawling, sl) {
     const bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#0b0f35');
-    bg.addColorStop(1, '#1b1150');
+    if (pres === 'premium') {
+      const hue = (t * 120) % 360;
+      bg.addColorStop(0, `hsl(${hue},70%,22%)`);
+      bg.addColorStop(1, `hsl(${(hue + 120) % 360},70%,18%)`);
+    } else if (fever) {
+      bg.addColorStop(0, '#3a0a10');
+      bg.addColorStop(1, '#6a2a08');
+    } else if (crawling) {
+      bg.addColorStop(0, '#050410');
+      bg.addColorStop(1, '#1a0a20');
+    } else {
+      bg.addColorStop(0, '#0b0f35');
+      bg.addColorStop(1, '#1b1150');
+    }
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(240,201,106,0.12)';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 9; i++) {
-      ctx.beginPath();
-      ctx.arc(W / 2, H + 40, 120 + i * 70 + ((t * 30) % 70), Math.PI, 0);
-      ctx.stroke();
+    if (fever || pres === 'premium') {
+      ctx.save();
+      ctx.translate(W / 2, H * 0.62);
+      ctx.rotate(t * 0.5);
+      for (let i = 0; i < 20; i++) {
+        ctx.rotate(Math.PI / 10);
+        ctx.fillStyle = i % 2 ? 'rgba(255,210,122,0.12)' : 'rgba(255,90,60,0.1)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-90, -800);
+        ctx.lineTo(90, -800);
+        ctx.fill();
+      }
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = 'rgba(240,201,106,0.12)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 9; i++) {
+        ctx.beginPath();
+        ctx.arc(W / 2, H + 40, 120 + i * 70 + ((t * 30) % 70), Math.PI, 0);
+        ctx.stroke();
+      }
     }
+    if (crawling) {
+      // The moon rabbit pounds mochi in time with the crawling reel.
+      const hot = sl.color === 'red' || sl.color === 'gold' || sl.color === 'rainbow';
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = hot ? '#ffcf8a' : '#fff4d8';
+      ctx.beginPath();
+      ctx.arc(150, 300, 120, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = hot ? '#b33a1a' : '#8a6a40';
+      const pound = Math.abs(Math.sin(t * (hot ? 7 : 4)));
+      ctx.translate(0, -pound * 14);
+      drawMochiRabbit(ctx, 160, 310, 150);
+      ctx.restore();
+    }
+  }
 
-    // Header: jackpot pool and double timer
+  _header(ctx, t, game, fever) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(0, 0, W, 92);
     ctx.textBaseline = 'middle';
@@ -206,7 +278,11 @@ export class LcdDisplay {
     ctx.fillText(String(game.jpPool).padStart(4, '0'), 36 + labelW + 20, 50);
     ctx.shadowBlur = 0;
     ctx.textAlign = 'right';
-    if (game.timers.double > 0) {
+    if (fever) {
+      ctx.font = `400 40px ${DISPLAY}`;
+      ctx.fillStyle = Math.floor(t * 6) % 2 ? '#ffd34a' : '#ff6b4a';
+      ctx.fillText(`フィーバー 残り${game.fever}`, W - 36, 48);
+    } else if (game.timers.double > 0) {
       ctx.font = `400 34px ${DISPLAY}`;
       ctx.fillStyle = Math.floor(t * 4) % 2 ? '#ff9ec0' : '#ffffff';
       ctx.fillText(`払出2倍 ${Math.ceil(game.timers.double)}秒`, W - 36, 48);
@@ -215,117 +291,161 @@ export class LcdDisplay {
       ctx.fillStyle = 'rgba(255,240,210,0.75)';
       ctx.fillText('鳥居をくぐれば抽選', W - 36, 48);
     }
+  }
 
-    // Reels
-    for (let i = 0; i < 3; i++) this._drawReel(ctx, i, sl, t);
+  _lampColor(color, t) {
+    switch (color) {
+      case 'blue': return '#5aa8ff';
+      case 'green': return '#5fe08a';
+      case 'red': return '#ff4a3c';
+      case 'gold': return Math.floor(t * 8) % 2 ? '#ffe27a' : '#ffb020';
+      case 'rainbow': return `hsl(${(t * 400) % 360},90%,60%)`;
+      default: return '#fff4dc';
+    }
+  }
 
-    // Stock lamps
-    const max = Math.max(4, game.stats.stockMax);
+  _lamps(ctx, t, game) {
+    const q = game.slot.queue;
+    const max = Math.max(4, game.stats.stockMax, q.length);
     const lampY = REEL_Y + REEL_H + 52;
-    const gap = 54;
+    const gap = Math.min(54, 700 / max);
     const x0 = W / 2 - ((max - 1) * gap) / 2;
     for (let i = 0; i < max; i++) {
-      const on = i < sl.stock;
+      const e = q[i];
       ctx.beginPath();
-      ctx.arc(x0 + i * gap, lampY, 17, 0, Math.PI * 2);
-      ctx.fillStyle = on ? '#ffcf5a' : 'rgba(255,255,255,0.12)';
-      if (on) { ctx.shadowColor = '#ffb020'; ctx.shadowBlur = 18; }
+      ctx.arc(x0 + i * gap, lampY, Math.min(17, gap * 0.34), 0, Math.PI * 2);
+      if (e) {
+        const col = this._lampColor(e.color, t);
+        ctx.fillStyle = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = e.color === 'white' ? 10 : 26;
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      }
       ctx.fill();
       ctx.shadowBlur = 0;
     }
     ctx.font = `400 26px ${DISPLAY}`;
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,240,210,0.7)';
-    ctx.fillText('保留', x0 - 100, lampY + 2);
-
-    // Reach banner
-    if (sl.spinning && sl.reach && sl.stopped && sl.stopped[1] && !sl.stopped[2]) {
-      const pulse = 0.6 + 0.4 * Math.sin(t * 14);
-      ctx.save();
-      ctx.globalAlpha = pulse;
-      ctx.font = `400 ${sl.bigReach ? 96 : 76}px ${DISPLAY}`;
-      ctx.textAlign = 'center';
-      ctx.lineWidth = 10;
-      ctx.strokeStyle = '#2a0a08';
-      ctx.strokeText(sl.bigReach ? '激アツ!' : 'リーチ!', W / 2, REEL_Y + REEL_H / 2);
-      ctx.fillStyle = sl.bigReach ? '#ff5a3c' : '#ffd27a';
-      ctx.fillText(sl.bigReach ? '激アツ!' : 'リーチ!', W / 2, REEL_Y + REEL_H / 2);
-      ctx.restore();
-    }
-
-    // Messages
-    this.messages = this.messages.filter((m) => m.until > t);
-    const m = this.messages[this.messages.length - 1];
-    if (m) {
-      const age = t - m.start;
-      const k = Math.min(1, age * 6);
-      ctx.save();
-      ctx.fillStyle = `rgba(5,6,26,${0.72 * k})`;
-      ctx.fillRect(0, REEL_Y - 10, W, REEL_H + 20);
-      if (m.big) {
-        ctx.translate(W / 2, REEL_Y + REEL_H / 2);
-        ctx.rotate(t * 0.6);
-        for (let i = 0; i < 16; i++) {
-          ctx.rotate(Math.PI / 8);
-          ctx.fillStyle = i % 2 ? 'rgba(255,210,122,0.22)' : 'rgba(255,90,60,0.18)';
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(-60, -700);
-          ctx.lineTo(60, -700);
-          ctx.fill();
-        }
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-      }
-      const scale = 0.7 + 0.3 * k + (m.big ? 0.05 * Math.sin(t * 10) : 0);
-      ctx.translate(W / 2, REEL_Y + REEL_H / 2 - (m.sub ? 26 : 0));
-      ctx.scale(scale, scale);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = `400 ${m.big ? 120 : 84}px ${DISPLAY}`;
-      ctx.lineWidth = 12;
-      ctx.strokeStyle = '#1a0805';
-      ctx.strokeText(m.text, 0, 0);
-      ctx.fillStyle = m.color;
-      ctx.fillText(m.text, 0, 0);
-      if (m.sub) {
-        ctx.font = `400 44px ${DISPLAY}`;
-        ctx.lineWidth = 8;
-        ctx.strokeText(m.sub, 0, 92);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(m.sub, 0, 92);
-      }
-      ctx.restore();
-    }
-    this.texture.needsUpdate = true;
+    ctx.fillText('保留', x0 - 30, lampY + 2);
   }
 
-  _drawReel(ctx, i, sl, t) {
+  _banner(ctx, t, sl, pres, crawling) {
+    if (!sl.spinning) return;
+    let text = null, color = '#ffd27a', size = 76;
+    if (pres === 'premium') {
+      text = '全回転!!';
+      color = `hsl(${(t * 300) % 360},90%,65%)`;
+      size = 100;
+    } else if (crawling) {
+      const hot = sl.color === 'red' || sl.color === 'gold';
+      text = sl.color === 'rainbow' ? '確定!!' : hot ? '激アツ!!' : 'スーパーリーチ';
+      color = sl.color === 'rainbow' ? `hsl(${(t * 300) % 360},90%,65%)` : hot ? '#ff5a3c' : '#ffd27a';
+      size = hot ? 92 : 70;
+    } else if (sl.reach && sl.stopped[1] && !sl.stopped[2]) {
+      text = 'リーチ!';
+    } else if (!sl.revealed && sl.stopped[2]) {
+      text = sl.presentation === 'revival' ? '…' : null;
+      color = '#9aa0c0';
+    }
+    if (!text) return;
+    // Pulse the size rather than the opacity so the text stays readable over busy reels.
+    const pulse = 1 + 0.06 * Math.sin(t * 14);
+    const top = text !== '…';
+    const y = top ? 108 : REEL_Y + REEL_H / 2;
+    ctx.save();
+    ctx.translate(W / 2, y);
+    ctx.scale(pulse, pulse);
+    ctx.font = `400 ${size}px ${DISPLAY}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#1a0606';
+    ctx.strokeText(text, 0, 0);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+
+  _messages(ctx, t) {
+    this.messages = this.messages.filter((m) => m.until > t);
+    const m = this.messages[this.messages.length - 1];
+    if (!m) return;
+    const age = t - m.start;
+    const k = Math.min(1, age * 6);
+    ctx.save();
+    ctx.fillStyle = `rgba(5,6,26,${0.72 * k})`;
+    ctx.fillRect(0, REEL_Y - 10, W, REEL_H + 20);
+    if (m.big) {
+      ctx.translate(W / 2, REEL_Y + REEL_H / 2);
+      ctx.rotate(t * 0.6);
+      for (let i = 0; i < 16; i++) {
+        ctx.rotate(Math.PI / 8);
+        ctx.fillStyle = i % 2 ? 'rgba(255,210,122,0.22)' : 'rgba(255,90,60,0.18)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-60, -700);
+        ctx.lineTo(60, -700);
+        ctx.fill();
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    const scale = 0.7 + 0.3 * k + (m.big ? 0.05 * Math.sin(t * 10) : 0);
+    ctx.translate(W / 2, REEL_Y + REEL_H / 2 - (m.sub ? 26 : 0));
+    ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `400 ${m.big ? 120 : 84}px ${DISPLAY}`;
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = '#1a0805';
+    ctx.strokeText(m.text, 0, 0);
+    ctx.fillStyle = m.color;
+    ctx.fillText(m.text, 0, 0);
+    if (m.sub) {
+      ctx.font = `400 44px ${DISPLAY}`;
+      ctx.lineWidth = 8;
+      ctx.strokeText(m.sub, 0, 92);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(m.sub, 0, 92);
+    }
+    ctx.restore();
+  }
+
+  _drawReel(ctx, i, sl, t, pres, crawling) {
     const x = REEL_X[i];
     const y = REEL_Y;
     ctx.save();
-    ctx.fillStyle = '#e6dcc6';
+    ctx.fillStyle = crawling && i === 2 ? '#fff1d6' : '#e6dcc6';
     ctx.beginPath();
     ctx.roundRect(x, y, REEL_W, REEL_H, 18);
     ctx.fill();
     ctx.clip();
-    const spinning = sl.spinning && sl.stopped && !sl.stopped[i];
+    const spinning = sl.spinning && !sl.stopped[i];
     const cx = x + REEL_W / 2 - SYM / 2;
     const cy = y + REEL_H / 2 - SYM / 2;
     if (spinning) {
-      const speed = 13;
-      const p = (t * speed + i * 3.3) % STRIP.length;
+      const p = this.reelPos[i];
       const base = Math.floor(p);
       const frac = p - base;
-      ctx.globalAlpha = 0.85;
+      const slow = (i === 2 && crawling) || pres === 'premium';
+      ctx.globalAlpha = slow ? 1 : 0.85;
       for (let k = -2; k <= 2; k++) {
         const sym = STRIP[(base - k + STRIP.length * 4) % STRIP.length];
         const yy = cy + (k + frac) * SYM;
-        ctx.drawImage(this.symbols[sym], cx, yy - 22, SYM, SYM + 44);
+        if (slow) ctx.drawImage(this.symbols[sym], cx, yy, SYM, SYM);
+        else ctx.drawImage(this.symbols[sym], cx, yy - 22, SYM, SYM + 44);
       }
       ctx.globalAlpha = 1;
     } else {
-      const target = sl.stopped ? sl.symbols[i] : this.display[i];
-      if (sl.stopped && sl.stopped[i]) this.display[i] = target;
+      let target = sl.spinning || sl.stopped[i] ? sl.symbols[i] : this.display[i];
+      if (i === 2 && !sl.revealed && sl.fakeThird !== null) target = sl.fakeThird;
+      this.display[i] = target;
       const since = t - this.reelStopT[i];
       const bounce = since < 0.25 ? Math.sin(since * Math.PI * 4) * 18 * (1 - since / 0.25) : 0;
       const idx = STRIP.indexOf(target);
@@ -342,7 +462,6 @@ export class LcdDisplay {
       }
       ctx.drawImage(this.symbols[target], cx, cy + bounce, SYM, SYM);
     }
-    // Glass shading
     const g = ctx.createLinearGradient(0, y, 0, y + REEL_H);
     g.addColorStop(0, 'rgba(20,10,40,0.55)');
     g.addColorStop(0.25, 'rgba(20,10,40,0)');
@@ -351,8 +470,9 @@ export class LcdDisplay {
     ctx.fillStyle = g;
     ctx.fillRect(x, y, REEL_W, REEL_H);
     ctx.restore();
-    ctx.strokeStyle = PALETTE.gold;
-    ctx.lineWidth = 5;
+    const glow = (pres === 'premium') || (crawling && i === 2);
+    ctx.strokeStyle = glow ? `hsl(${(t * 300) % 360},90%,65%)` : PALETTE.gold;
+    ctx.lineWidth = glow ? 8 : 5;
     ctx.beginPath();
     ctx.roundRect(x, y, REEL_W, REEL_H, 18);
     ctx.stroke();
