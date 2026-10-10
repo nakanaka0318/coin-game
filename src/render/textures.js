@@ -1,0 +1,362 @@
+// Procedural canvas textures: medal faces, field print, stage art, moon.
+import * as THREE from 'three';
+
+export const PALETTE = {
+  indigo: '#151a45',
+  indigoDeep: '#0a0d26',
+  vermilion: '#d9452e',
+  gold: '#f0c96a',
+  goldDeep: '#b8862f',
+  moon: '#f7ecc8',
+  sakura: '#f4a3b8',
+  ink: '#1b1424',
+};
+
+export function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+// Sitting rabbit silhouette, centred on (cx, cy), facing left. `s` is the
+// overall size in pixels.
+export function drawRabbit(ctx, cx, cy, s, { eye = true } = {}) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  ctx.beginPath();
+  ctx.ellipse(0.05, 0.16, 0.33, 0.25, 0, 0, Math.PI * 2); // body
+  ctx.moveTo(-0.08, -0.12);
+  ctx.arc(-0.24, -0.12, 0.17, 0, Math.PI * 2); // head
+  ctx.moveTo(0.43, 0.12);
+  ctx.arc(0.36, 0.12, 0.08, 0, Math.PI * 2); // tail
+  ctx.fill();
+  for (const [x, y, r] of [[-0.2, -0.42, 0.22], [-0.08, -0.4, 0.5]]) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, 0.06, 0.21, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.ellipse(-0.22, 0.36, 0.11, 0.06, 0, 0, Math.PI * 2); // paw
+  ctx.fill();
+  if (eye) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(-0.3, -0.15, 0.03, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Rabbit pounding mochi, the classic figure seen in the moon.
+export function drawMochiRabbit(ctx, cx, cy, s) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  // Mortar (usu)
+  ctx.beginPath();
+  ctx.moveTo(0.05, 0.18);
+  ctx.lineTo(0.45, 0.18);
+  ctx.lineTo(0.4, 0.45);
+  ctx.lineTo(0.1, 0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(0.25, 0.18, 0.21, 0.06, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Pestle (kine)
+  ctx.save();
+  ctx.translate(0.0, -0.05);
+  ctx.rotate(-0.6);
+  ctx.fillRect(-0.02, -0.05, 0.04, 0.42);
+  ctx.fillRect(-0.12, -0.12, 0.24, 0.09);
+  ctx.restore();
+  ctx.restore();
+  drawRabbit(ctx, cx - s * 0.3, cy + s * 0.05, s * 0.75);
+}
+
+function heightToNormal(src, strength) {
+  const w = src.width, h = src.height;
+  const sd = src.getContext('2d').getImageData(0, 0, w, h).data;
+  const out = makeCanvas(w, h);
+  const octx = out.getContext('2d');
+  const img = octx.createImageData(w, h);
+  const d = img.data;
+  const H = (x, y) => sd[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * strength;
+      const dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * w + x) * 4;
+      d[i] = (-dx / len * 0.5 + 0.5) * 255;
+      d[i + 1] = (dy / len * 0.5 + 0.5) * 255;
+      d[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+      d[i + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  return out;
+}
+
+function blurCanvas(src, px) {
+  const c = makeCanvas(src.width, src.height);
+  const ctx = c.getContext('2d');
+  ctx.filter = `blur(${px}px)`;
+  ctx.drawImage(src, 0, 0);
+  return c;
+}
+
+// Medal face: a height map (embossed design) turned into a normal map, plus
+// a subtle colour map so the relief reads even under flat light.
+export function makeCoinFace(kind, size = 256) {
+  const hc = makeCanvas(size, size);
+  const ctx = hc.getContext('2d');
+  const c = size / 2;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, size, size);
+  // Raised rim
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(c, c, size * 0.5, 0, Math.PI * 2);
+  ctx.arc(c, c, size * 0.43, 0, Math.PI * 2, true);
+  ctx.fill();
+  // Dotted ring
+  ctx.fillStyle = '#bbb';
+  const dots = 36;
+  for (let i = 0; i < dots; i++) {
+    const a = (i / dots) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(c + Math.cos(a) * size * 0.385, c + Math.sin(a) * size * 0.385, size * 0.012, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (kind === 'gold') {
+    ctx.fillStyle = '#ddd';
+    ctx.font = `900 ${size * 0.42}px "Dela Gothic One", "Hiragino Mincho ProN", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('福', c, c + size * 0.02);
+  } else {
+    // Crescent + rabbit
+    ctx.fillStyle = '#999';
+    ctx.beginPath();
+    ctx.arc(c + size * 0.02, c, size * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(c + size * 0.11, c - size * 0.04, size * 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e0e0e0';
+    drawRabbit(ctx, c + size * 0.06, c + size * 0.04, size * 0.36);
+  }
+  const blurred = blurCanvas(hc, size / 200);
+  const normal = heightToNormal(blurred, kind === 'gold' ? 3.2 : 2.6);
+
+  const color = makeCanvas(size, size);
+  const cctx = color.getContext('2d');
+  cctx.fillStyle = '#fff';
+  cctx.fillRect(0, 0, size, size);
+  cctx.globalAlpha = 0.22;
+  cctx.globalCompositeOperation = 'multiply';
+  cctx.drawImage(blurred, 0, 0);
+  const tex = (cv, srgb) => {
+    const t = new THREE.CanvasTexture(cv);
+    t.anisotropy = 4;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  return { normalMap: tex(normal, false), map: tex(color, true) };
+}
+
+// Reeded edge for the medal rim.
+export function makeReededEdge() {
+  const c = makeCanvas(256, 8);
+  const ctx = c.getContext('2d');
+  for (let x = 0; x < 256; x++) {
+    const v = 0.5 + 0.5 * Math.sin((x / 256) * Math.PI * 2 * 48);
+    const g = Math.round(v * 255);
+    ctx.fillStyle = `rgb(${g},${g},${g})`;
+    ctx.fillRect(x, 0, 1, 8);
+  }
+  const t = new THREE.CanvasTexture(heightToNormal(c, 1.5));
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+
+// Seigaiha (blue ocean waves) print in gold lines on lacquered indigo.
+export function makeSeigaiha(size = 1024, { bg = PALETTE.indigo, line = PALETTE.gold, alpha = 0.55, scale = 64 } = {}) {
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, size, size);
+  const R = scale;
+  const rows = Math.ceil(size / (R / 2)) + 3;
+  const cols = Math.ceil(size / R) + 2;
+  for (let row = -1; row < rows; row++) {
+    const y = row * (R / 2);
+    const off = (row % 2) * (R / 2);
+    for (let col = -1; col < cols; col++) {
+      const x = col * R + off;
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.arc(x, y, R * 0.98, Math.PI, 0);
+      ctx.fill();
+      ctx.strokeStyle = line;
+      ctx.globalAlpha = alpha;
+      for (let k = 1; k <= 4; k++) {
+        ctx.lineWidth = k === 1 ? R * 0.05 : R * 0.035;
+        ctx.beginPath();
+        ctx.arc(x, y, R * (k / 4) * 0.92, Math.PI, 0);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+
+// Stage plate: night sky with drifting clouds and stars, plus a guide arc
+// pointing at the torii checker at the lip.
+export function makeStageArt(w = 1024, h = 512) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#0b0f2e');
+  g.addColorStop(1, '#253074');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  // Stars
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 260; i++) {
+    ctx.fillStyle = `rgba(255,245,215,${0.25 + rnd() * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(rnd() * w, rnd() * h, rnd() * 1.6 + 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Clouds (stylised, Japanese suyari-gasumi bands)
+  ctx.fillStyle = 'rgba(240,201,106,0.16)';
+  for (const [y, x0, x1] of [[0.28, 0.02, 0.4], [0.5, 0.6, 0.98], [0.72, 0.1, 0.45]]) {
+    const yy = y * h, r = h * 0.05;
+    ctx.beginPath();
+    ctx.roundRect(x0 * w, yy - r, (x1 - x0) * w, r * 2, r);
+    ctx.fill();
+  }
+  // Guide arrows toward the centre
+  ctx.strokeStyle = 'rgba(240,201,106,0.5)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([14, 12]);
+  ctx.beginPath();
+  ctx.moveTo(w * 0.5, h * 0.12);
+  ctx.lineTo(w * 0.5, h * 0.97);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+// Full moon with craters and the mochi rabbit.
+export function makeMoon(size = 512) {
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d');
+  const r = size / 2;
+  const g = ctx.createRadialGradient(r * 0.85, r * 0.8, r * 0.1, r, r, r);
+  g.addColorStop(0, '#fffaf0');
+  g.addColorStop(0.7, '#f7e9bf');
+  g.addColorStop(1, '#e8cf8a');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(r, r, r * 0.98, 0, Math.PI * 2);
+  ctx.fill();
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 26; i++) {
+    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r * 0.8;
+    ctx.fillStyle = `rgba(190,160,100,${0.08 + rnd() * 0.12})`;
+    ctx.beginPath();
+    ctx.arc(r + Math.cos(a) * d, r + Math.sin(a) * d, rnd() * r * 0.13 + r * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(160,120,70,0.42)';
+  drawMochiRabbit(ctx, r * 1.02, r * 0.98, r * 0.95);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Paper lantern with a single character.
+export function makeLantern(char) {
+  const c = makeCanvas(128, 256);
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 128, 0);
+  g.addColorStop(0, '#8a1d14');
+  g.addColorStop(0.5, '#ff6b45');
+  g.addColorStop(1, '#8a1d14');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 256);
+  ctx.strokeStyle = 'rgba(60,10,5,0.35)';
+  ctx.lineWidth = 2;
+  for (let y = 12; y < 256; y += 16) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(128, y);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#1b0d08';
+  ctx.font = '900 84px "Dela Gothic One", "Hiragino Mincho ProN", serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(char, 64, 132);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Soft round sprite for sparkles and bokeh.
+export function makeGlowSprite(size = 64) {
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.25, 'rgba(255,255,255,0.7)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Arcade backdrop: blurred lights of other machines in a dark hall.
+export function makeBackdrop(w = 1024, h = 512) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#05061a');
+  g.addColorStop(1, '#14102e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const cols = ['255,90,70', '255,200,100', '120,140,255', '255,140,190', '120,230,220'];
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 90; i++) {
+    const x = rnd() * w, y = h * (0.25 + rnd() * 0.6), r = 6 + rnd() * 34;
+    const col = cols[Math.floor(rnd() * cols.length)];
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, `rgba(${col},${0.25 + rnd() * 0.35})`);
+    rg.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = rg;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "moon-rabbit-pusher",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Physics-based 3D medal pusher with a roguelike run (three.js + Rapier)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "@dimforge/rapier3d-simd-compat": "0.20.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.0"
+  }
+}
