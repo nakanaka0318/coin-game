@@ -207,9 +207,33 @@ export class Game {
     this.emit('stats', s);
   }
 
+  // Between nights the attendant fills the bare spots on the table with one
+  // layer of medals, so a big fever doesn't leave the next night starving.
+  _replenishField() {
+    const w = this.world, r = this.rng;
+    const STEP = 1.03, X0 = -HALF_W + 0.55, Z0 = PUSHER.frontMax + 0.7;
+    const cell = (x, z) => `${Math.round((x - X0) / STEP)},${Math.round((z - Z0) / STEP)}`;
+    const used = new Set();
+    for (let i = 0; i < w.highWater; i++) {
+      if (w.kind[i] < 0) continue;
+      const y = w.pos[i * 3 + 1];
+      if (y > -0.5 && y < 1.2) used.add(cell(w.pos[i * 3], w.pos[i * 3 + 2]));
+    }
+    let added = 0;
+    for (let z = Z0; z < FRONT_Z - 0.8; z += STEP) {
+      for (let x = X0; x < HALF_W - 0.5; x += STEP) {
+        if (used.has(cell(x, z))) continue;
+        w.spawn(KIND.SILVER, x + r.range(-0.2, 0.2), 0.3, z + r.range(-0.2, 0.2), this._tilt(0.06));
+        added++;
+      }
+    }
+    return added;
+  }
+
   startNight() {
     const def = NIGHTS[this.nightIndex];
     const r = this.rng;
+    const replenished = this.nightIndex > 0 ? this._replenishField() : 0;
     let omen = null;
     if (!def.boss && this.nightIndex > 0) omen = r.pick(OMENS);
     const boss = def.boss ? BOSSES[def.boss] : null;
@@ -234,6 +258,7 @@ export class Game {
       grace: GRACE_SECONDS,
       cleared: false,
       time: 0,
+      replenished,
     };
     this.timers.tremor = this.stats.tremor || 0;
     this.timers.foxfire = this.stats.foxfire || 0;

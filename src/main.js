@@ -357,7 +357,10 @@ function onGameEvent(type, d) {
     }
     case 'nightStart': {
       record.best = Math.max(record.best, d.index + 1);
-      ui.showIntro(d, () => { audio.nightStart(d.index); });
+      ui.showIntro(d, () => {
+        audio.nightStart(d.index);
+        if (d.replenished >= 8) ui.toast(`月兎が台にメダルを${d.replenished}枚補充した`);
+      });
       view.setView('overview');
       persist();
       break;
