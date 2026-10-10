@@ -105,7 +105,7 @@ const ui = new UI(document.getElementById('ui'), {
   leaveShop: () => { audio.click(); game.leaveShop(); persist(); },
   settings: (s, live) => applySettings(s, !live),
   aimFraction: (f) => { audio.unlock(); game.setAim(AIM.minX + f * (AIM.maxX - AIM.minX)); },
-  fireDown: () => { audio.unlock(); input.fireHeld.add('button'); },
+  fireDown: () => { audio.unlock(); input.fireHeld.add('button'); if (canPlay()) game.requestFire(); },
   fireUp: () => { input.fireHeld.delete('button'); },
   drawTitleMoon: (c) => {
     const ctx = c.getContext('2d');
@@ -469,7 +469,13 @@ addEventListener('keyup', (e) => {
   if (k === 'arrowright' || k === 'd') input.keys.delete('right');
 });
 addEventListener('blur', () => { input.keys.clear(); input.fireHeld.clear(); });
-addEventListener('resize', () => view.resize());
+// Keep the picture clear of the HUD and the touch controls.
+function updateInsets() {
+  const narrow = innerWidth <= 760;
+  view.setInsets(isTouch && narrow ? 118 : 0, isTouch ? (narrow ? 186 : 100) : 40, isTouch);
+}
+updateInsets();
+addEventListener('resize', () => { updateInsets(); view.resize(); });
 addEventListener('pagehide', persist);
 document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 

@@ -7,12 +7,53 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeBackdrop } from './textures.js';
 
 // Camera presets: target point, elevation (deg), extent that must fit on
-// screen (width, height in world units around the target).
+// screen (width, height in world units around the target). A `span` preset
+// instead names the top and bottom points that must fit, and is solved for
+// the current screen.
 const VIEWS = {
-  overview: { target: [0, 1.6, -1.6], elev: 38, width: 16.8, height: 24.5, yaw: 0 },
+  overview: { span: [[0, 11.4, -11.5], [0, -3.3, 6.0]], elev: 38, width: 16.8, yaw: 0 },
   field: { target: [0, -0.6, 1.4], elev: 46, width: 15, height: 13.5, yaw: 0 },
   stage: { target: [0, 5.2, -8.4], elev: 24, width: 14, height: 11, yaw: 0 },
 };
+// With touch controls the overview frames just the play area, from the top of
+// the LCD down to the offering box; the sign above it can sit behind the HUD.
+const TOUCH_VIEWS = {
+  ...VIEWS,
+  overview: { span: [[0, 10.75, -11.5], [0, -3.2, 5.95]], elev: 38, width: 16.8, yaw: 0 },
+};
+
+// Solves the target and distance that fit a view's two span points inside the
+// picture band with equal margins, as a plain target/width/height preset.
+function fitSpan(view, tanV, aspect, fitScale) {
+  const e = THREE.MathUtils.degToRad(view.elev);
+  const up = new THREE.Vector3(0, Math.cos(e), -Math.sin(e));
+  const back = new THREE.Vector3(0, Math.sin(e), Math.cos(e));
+  const [a, b] = view.span.map((p) => new THREE.Vector3(...p));
+  const target = new THREE.Vector3();
+  const r = new THREE.Vector3();
+  const screenY = (p, t, d) => {
+    target.lerpVectors(a, b, t);
+    r.subVectors(p, target);
+    return r.dot(up) / ((d - r.dot(back)) * tanV * fitScale);
+  };
+  const balance = (d) => {
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 40; i++) {
+      const t = (lo + hi) / 2;
+      if (screenY(a, t, d) + screenY(b, t, d) > 0) hi = t; else lo = t;
+    }
+    return (lo + hi) / 2;
+  };
+  const margin = 0.95;
+  let lo = 1, hi = 400;
+  for (let i = 0; i < 50; i++) {
+    const d = (lo + hi) / 2;
+    if (screenY(a, balance(d), d) > margin) lo = d; else hi = d;
+  }
+  const d = Math.max(hi, (view.width / 2) / (tanV * aspect));
+  target.lerpVectors(a, b, balance(d));
+  return { target: target.toArray(), elev: view.elev, yaw: view.yaw, width: view.width, height: 2 * d * tanV * fitScale };
+}
 
 // A dark hall with a few soft light panels, used only to light reflections
 // on the metal medals and lacquer.
@@ -57,7 +98,6 @@ export class SceneView {
     this._backdrop();
 
     this.viewName = 'overview';
-    this.view = { ...VIEWS.overview };
     this.viewFrom = null;
     this.viewBlend = 1;
     this.shake = 0;
@@ -66,6 +106,7 @@ export class SceneView {
     this.composer = null;
     this.setQuality(quality);
     this.resize();
+    this.view = { ...this.views.overview };
   }
 
   _lights() {
@@ -131,14 +172,14 @@ export class SceneView {
   }
 
   setView(name) {
-    if (!VIEWS[name]) return;
+    if (!this.views[name]) return;
     this.viewFrom = { ...this.view };
     this.viewName = name;
     this.viewBlend = 0;
   }
 
   cycleView() {
-    const names = Object.keys(VIEWS);
+    const names = Object.keys(this.views);
     this.setView(names[(names.indexOf(this.viewName) + 1) % names.length]);
   }
 
@@ -146,9 +187,42 @@ export class SceneView {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.size = { w, h };
+    this._applyInsets();
     if (this.composer) this.composer.setSize(w, h);
+  }
+
+  // Screen space taken by the HUD (top) and touch controls (bottom). The
+  // picture is centred in the band between them.
+  setInsets(top, bottom, compact = false) {
+    if (this.insets && this.insets.top === top && this.insets.bottom === bottom && this.insets.compact === compact) return;
+    this.insets = { top, bottom, compact };
+    if (this.size) this._applyInsets();
+  }
+
+  _applyInsets() {
+    const { w, h } = this.size;
+    const { top, bottom, compact } = this.insets || { top: 0, bottom: 0, compact: false };
+    const cam = this.camera;
+    if (!top && !bottom) {
+      cam.aspect = w / h;
+      cam.clearViewOffset();
+      this.fitScale = 1;
+    } else {
+      // Render a window of a taller virtual frame whose centre sits in the
+      // middle of the free band.
+      const usable = Math.max(120, h - top - bottom);
+      const yc = top + usable / 2;
+      const half = Math.max(yc, h - yc);
+      cam.aspect = w / (2 * half);
+      cam.setViewOffset(w, 2 * half, 0, half - yc, w, h);
+      this.fitScale = usable / (2 * half);
+    }
+    cam.updateProjectionMatrix();
+    const base = compact ? TOUCH_VIEWS : VIEWS;
+    const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+    this.views = Object.fromEntries(Object.entries(base).map(([k, v]) =>
+      [k, v.span ? fitSpan(v, tanV, cam.aspect, this.fitScale) : v]));
   }
 
   addShake(amount) {
@@ -156,7 +230,7 @@ export class SceneView {
   }
 
   _placeCamera(dt) {
-    const target = VIEWS[this.viewName];
+    const target = this.views[this.viewName];
     if (this.viewBlend < 1) {
       this.viewBlend = Math.min(1, this.viewBlend + dt * 1.6);
       const k = this.viewBlend * this.viewBlend * (3 - 2 * this.viewBlend);
@@ -173,9 +247,8 @@ export class SceneView {
     }
     const v = this.view;
     const cam = this.camera;
-    const vfov = THREE.MathUtils.degToRad(cam.fov);
-    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * cam.aspect);
-    const dist = Math.max((v.height / 2) / Math.tan(vfov / 2), (v.width / 2) / Math.tan(hfov / 2));
+    const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+    const dist = Math.max((v.height / 2) / (tanV * (this.fitScale ?? 1)), (v.width / 2) / (tanV * cam.aspect));
     const e = THREE.MathUtils.degToRad(v.elev);
     const yaw = THREE.MathUtils.degToRad(v.yaw);
     cam.position.set(

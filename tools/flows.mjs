@@ -81,7 +81,7 @@ await step('game over', async () => {
 await step('moon shrine buy', async () => {
   await click('月の社');
   const before = await page.evaluate(() => JSON.parse(localStorage.getItem('moon-rabbit-pusher:v1') || '{}'));
-  await page.locator('button.btn.gold:not([disabled])').first().click();
+  await page.locator('button.btn.gold:not([disabled]):visible', { hasText: '月の欠片' }).first().click();
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${out}/f-shrine.png` });
   const levels = await page.evaluate(() => Object.values(window.__game.meta).reduce((a, b) => a + b, 0));

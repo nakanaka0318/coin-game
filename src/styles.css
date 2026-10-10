@@ -906,4 +906,13 @@ kbd {
   .stat small { font-size: 10px; letter-spacing: 0.04em; }
   .fever-chip { font-size: 12px; padding: 4px 8px; }
   .touch .rail { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); }
+  .stat small { white-space: nowrap; }
+  .touch .hud { background: linear-gradient(to bottom, rgba(5, 6, 26, 0.94) 75%, rgba(5, 6, 26, 0)); padding-bottom: 14px; }
+}
+
+@media (max-width: 400px) {
+  .night-label strong { font-size: 15px; }
+  .stat b { font-size: 16px; }
+  .stat small { letter-spacing: 0; }
+  .purse { gap: 6px; }
 }
