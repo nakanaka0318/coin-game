@@ -71,11 +71,15 @@ npm run build    # dist/ に静的ファイルを出力
 ```sh
 node tools/sim-test.mjs 320 40          # 物理の負荷と安定性
 node tools/balance.mjs steady 500 0.5   # 1投入あたりの払い出し率
-node tools/balance.mjs run 3            # ボットによるラン
-node tools/bake-field.mjs 420           # 初期盤面の再生成
+AIM=mid node tools/balance.mjs run 3     # ボットによるラン
+node tools/bake-field.mjs 600           # 初期盤面の再生成
 ```
 
 ## 公開
 
-`main` に push すると GitHub Actions がビルドし、`gh-pages` ブランチへ公開します。
-初回はリポジトリの **Settings → Pages** で Source を「Deploy from a branch」、ブランチを `gh-pages` / `(root)` に設定してください。
+`main` に push すると GitHub Actions (`.github/workflows/deploy.yml`) がビルドし、`dist/` を `gh-pages` ブランチへ公開します。GitHub Pages の公開元は `gh-pages` ブランチの `(root)` です。
+
+## ライブラリ
+
+- three.js (MIT License)
+- Rapier / `@dimforge/rapier3d-compat`, `@dimforge/rapier3d-simd-compat` (Apache License 2.0)
