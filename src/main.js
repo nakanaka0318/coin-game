@@ -472,7 +472,7 @@ addEventListener('blur', () => { input.keys.clear(); input.fireHeld.clear(); });
 // Keep the picture clear of the HUD and the touch controls.
 function updateInsets() {
   const narrow = innerWidth <= 760;
-  view.setInsets(isTouch && narrow ? 118 : 0, isTouch ? (narrow ? 186 : 100) : 40, isTouch);
+  view.setInsets(isTouch && narrow ? 118 : 0, isTouch ? (narrow ? 186 : 78) : 40, isTouch);
 }
 updateInsets();
 addEventListener('resize', () => { updateInsets(); view.resize(); });

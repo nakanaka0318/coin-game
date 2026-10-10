@@ -916,3 +916,23 @@ kbd {
   .stat small { letter-spacing: 0; }
   .purse { gap: 6px; }
 }
+
+/* ---------- short landscape touch screens ---------- */
+@media (min-width: 761px) and (max-height: 520px) {
+  .touch .hud { padding: 6px 12px; row-gap: 2px; }
+  .touch .night-label strong { font-size: 16px; }
+  .touch .stat b { font-size: 18px; }
+  .touch .quota-top b { font-size: 24px; }
+  .touch .rail { top: 112px; padding: 0 10px; }
+  .touch .rail h3 { display: none; }
+  .touch .seals { gap: 5px; }
+  .touch .seal { width: 34px; height: 34px; font-size: 17px; border-radius: 7px; }
+  .touch .rail.right .seals { flex-direction: row; }
+  .touch .ofuda { width: 32px; height: 62px; font-size: 16px; padding-top: 12px; background: linear-gradient(#1b1424 0 10px, #f6eed8 10px); }
+  .touch .ofuda kbd { display: none; }
+  .touch .corner { top: 184px; right: 10px; flex-direction: row; }
+  .touch .controls { bottom: calc(6px + env(safe-area-inset-bottom, 0px)); padding: 0 64px; }
+  .touch .aim-track { height: 46px; }
+  .touch .fire-btn { width: 66px; height: 66px; font-size: 17px; }
+  .touch .dock { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+}
