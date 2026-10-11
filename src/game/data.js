@@ -63,8 +63,8 @@ export const NIGHTS = [
   { name: '上弦の月', reading: 'じょうげんのつき', phase: 0.5, quota: 30, boss: 'oni' },
   { name: '十日夜', reading: 'とおかんや', phase: 0.62, quota: 44 },
   { name: '十三夜', reading: 'じゅうさんや', phase: 0.78, quota: 56 },
-  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 72 },
-  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 96, boss: 'fullmoon' },
+  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 74 },
+  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 100, boss: 'fullmoon' },
 ];
 
 // Boss nights. Each brings an enemy (ENEMIES) that hovers over the landing
@@ -105,9 +105,9 @@ export const ENEMIES = {
     reward: 'メダル15枚の雨と金メダル3枚。',
   },
   tengu: {
-    name: '大天狗', hp: 40, speed: 4.4, wait: [0.5, 1.3], shards: 8,
+    name: '大天狗', hp: 50, speed: 4.4, wait: [0.5, 1.3], shards: 8,
     curse: '9秒ごとに天狗風を起こし、台のメダルを横へ吹き飛ばす。',
-    reward: 'メダル25枚の雨とフィーバー。',
+    reward: 'メダル30枚の雨と金メダル4枚。',
   },
 };
 

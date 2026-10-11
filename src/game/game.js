@@ -403,7 +403,7 @@ export class Game {
     switch (b.key) {
       case 'oni': this.queueRain(10 + b.stolen * 2, KIND.SILVER, 0.4); gold(2, 0.6); break;
       case 'tanuki': this.queueRain(15, KIND.SILVER, 0.4); gold(3, 0.6); break;
-      case 'tengu': this.queueRain(25, KIND.SILVER, 0.4); this._startFever(); break;
+      case 'tengu': this.queueRain(30, KIND.SILVER, 0.4); gold(4, 0.6); break;
       default: break;
     }
     this.emit('bossDefeated', { key: b.key, name: b.name, x: p.x, y: p.y, z: p.z, stolen: b.stolen, shards: E.shards });

@@ -72,7 +72,7 @@ if (mode === 'run') {
       }
     }
     const n = game.night;
-    log.push(`[run ${k}] END ${game.phase} at ${n.name}: net ${game.netOf(n)}/${n.quota} catch ${n.caught}/${n.caught + n.missed} bank ${game.bank} charms [${game.charms.join(',')}]`);
+    log.push(`[run ${k}] END ${game.phase} at ${n.name}: net ${game.netOf(n)}/${n.quota} catch ${n.caught}/${n.caught + n.missed} bank ${game.bank} charms [${game.charms.join(',')}] kills ${game.run.bossKills || 0}`);
     console.log(log[log.length - 1]);
     results.push(game.phase === 'clear' ? 8 : game.nightIndex);
     console.log(`NETS ${JSON.stringify(nets)}`);
