@@ -3,7 +3,7 @@
 // Has no DOM or rendering dependencies so it can be simulated headlessly.
 import { KIND } from '../sim/physics.js';
 import {
-  HALF_W, FRONT_Z, RAIN, STAGE, PUSHER, BOX, PIT_Y, PITCHER, LANDING, AIM, WORLD, BOSS,
+  HALF_W, FRONT_Z, RAIN, STAGE, PUSHER, BOX, PIT_Y, PITCHER, LANDING, AIM, WORLD, BOSS, FLIGHT,
   stagePoint,
 } from '../sim/config.js';
 import { CHECKER_POST_S } from '../sim/machine.js';
@@ -19,6 +19,7 @@ const FLAG_CHECKED = 1;
 const FLAG_FLIGHT = 2; // lobbed by a pitcher, not yet landed
 const FLAG_CAUGHT = 4; // landed in the offering box
 const FLAG_HIT = 8; // already struck the boss
+const FLAG_PLAYER = 16; // shot from a pitcher; only these count at the torii
 const MAX_BODIES = 950;
 const GRACE_SECONDS = 8;
 const JP_BASE = 50;
@@ -581,7 +582,7 @@ export class Game {
     const hd = Math.hypot(dx, dz) || 1;
     const m = { x: p.x + (dx / hd) * PITCHER.barrel, y: p.y + 0.15, z: p.z + (dz / hd) * PITCHER.barrel };
     const dist = Math.hypot(tgt.x - m.x, tgt.z - m.z);
-    const T = 0.42 + 0.035 * dist;
+    const T = FLIGHT.base + FLIGHT.perUnit * dist;
     const g = WORLD.gravity;
     const v = { x: (tgt.x - m.x) / T, y: (tgt.y - m.y) / T - 0.5 * g * T, z: (tgt.z - m.z) / T };
     return { m, v, tx };
@@ -592,7 +593,7 @@ export class Game {
     const r = this.rng;
     const slot = this.world.spawn(kind, m.x, m.y, m.z, this._tilt(0.5), v,
       { x: r.range(-2, 2), y: (i === 0 ? 1 : -1) * r.range(12, 18), z: r.range(-2, 2) });
-    if (slot >= 0) this.world.flags[slot] |= FLAG_FLIGHT;
+    if (slot >= 0) this.world.flags[slot] |= FLAG_FLIGHT | FLAG_PLAYER;
     this.emit('fire', { pitcher: i, x: tx, kind, free });
     return slot;
   }
@@ -912,9 +913,13 @@ export class Game {
       const f = w.flags[i];
       if (f & FLAG_CAUGHT) continue;
       const x = w.pos[i * 3], y = w.pos[i * 3 + 1], z = w.pos[i * 3 + 2];
-      if (!(f & FLAG_CHECKED) && z > CHECKER_Z && y > CHECKER_Y - 0.6 && k !== KIND.BALL) {
+      // Checked once, as it slides down the stage across the torii line (not
+      // while still flying in from the pitchers at the front).
+      if (!(f & (FLAG_CHECKED | FLAG_FLIGHT)) && z > CHECKER_Z && z < CHECKER_Z + 1.2
+        && y > CHECKER_Y - 0.6 && y < CHECKER_Y + 1.5 && k !== KIND.BALL) {
         w.flags[i] |= FLAG_CHECKED;
-        if (!silent && Math.abs(x - toriiX) < gap) this._checker(x);
+        // Only medals the player shot draw the slot; bonus medals pass quietly.
+        if (!silent && (f & FLAG_PLAYER) && Math.abs(x - toriiX) < gap) this._checker(x);
       }
       // Inside the offering box?
       if (y < BOX_RIM_Y - 0.05 && y > BOX.floorY - 0.1 && Math.abs(x - boxX) < boxHalf + 0.05 && Math.abs(z - BOX.z) < BOX.depth / 2 + 0.05) {

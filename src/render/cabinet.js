@@ -3,7 +3,7 @@
 // meshes match what the physics sees.
 import * as THREE from 'three';
 import {
-  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD, BOSS,
+  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD, BOSS, FLIGHT,
   stagePoint,
 } from '../sim/config.js';
 import { checkerPostPos, quatX, CHECKER_POST_S } from '../sim/machine.js';
@@ -193,6 +193,20 @@ export class Cabinet {
     this.group.add(this.arc);
   }
 
+  // Muzzle point and launch velocity for a lob from pitcher pc to aimX
+  // (the same ballistics as Game._launch, without the random spread).
+  _lob(pc, aimX) {
+    const tgt = stagePoint(aimX, LANDING.s, 0.12);
+    const p = pc.root.position;
+    const dx = tgt.x - p.x, dz = tgt.z - p.z, hd = Math.hypot(dx, dz) || 1;
+    const m = { x: p.x + (dx / hd) * PITCHER.barrel, y: p.y + 0.15, z: p.z + (dz / hd) * PITCHER.barrel };
+    const dist = Math.hypot(tgt.x - m.x, tgt.z - m.z);
+    const T = FLIGHT.base + FLIGHT.perUnit * dist;
+    const g = WORLD.gravity;
+    const v = { x: (tgt.x - m.x) / T, y: (tgt.y - m.y) / T - 0.5 * g * T, z: (tgt.z - m.z) / T };
+    return { m, v, T };
+  }
+
   // Point the pitchers at their aim points and place the aim markers.
   updateAim(game, visible) {
     const markerAt = (mesh, x, lift = 0.02) => {
@@ -207,23 +221,14 @@ export class Cabinet {
       const aimX = game.aim.x[i];
       markerAt(this.aimRings[i], aimX, 0.025);
       this.aimRings[i].visible = visible;
-      const tgt = stagePoint(aimX, LANDING.s, 0.1);
-      const dx = tgt.x - pc.root.position.x, dz = tgt.z - pc.root.position.z;
-      pc.yaw.rotation.y = Math.atan2(dx, dz);
-      pc.pitch.rotation.x = -0.55;
+      const { v } = this._lob(pc, aimX);
+      pc.yaw.rotation.y = Math.atan2(v.x, v.z);
+      pc.pitch.rotation.x = -Math.atan2(v.y, Math.hypot(v.x, v.z));
       pc.pitch.position.z = -pc.recoil * 0.25;
     }
     // Arc for the next shot.
-    const i = game.nextPitcher;
-    const pc = this.pitchers[i];
-    const tgt = stagePoint(game.aim.x[i], LANDING.s, 0.12);
-    const p = pc.root.position;
-    const dx = tgt.x - p.x, dz = tgt.z - p.z, hd = Math.hypot(dx, dz) || 1;
-    const m = { x: p.x + (dx / hd) * PITCHER.barrel, y: p.y + 0.15, z: p.z + (dz / hd) * PITCHER.barrel };
-    const dist = Math.hypot(tgt.x - m.x, tgt.z - m.z);
-    const T = 0.42 + 0.035 * dist;
+    const { m, v, T } = this._lob(this.pitchers[game.nextPitcher], game.aim.x[game.nextPitcher]);
     const g = WORLD.gravity;
-    const v = { x: (tgt.x - m.x) / T, y: (tgt.y - m.y) / T - 0.5 * g * T, z: (tgt.z - m.z) / T };
     const arr = this.arc.geometry.attributes.position.array;
     for (let k = 0; k < 24; k++) {
       const t = (k / 23) * T;

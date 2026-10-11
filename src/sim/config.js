@@ -87,11 +87,13 @@ export const STAGE = {
 // Pitchers on both side walls lob medals onto the felt landing strip at
 // the top of the stage. The player moves one aim point along the strip.
 export const PITCHER = {
-  x: HALF_W + 0.15, // mounted at ±x on the side walls
-  y: 8.3,
-  z: -8.4,
+  x: HALF_W + 0.15, // mounted at the front corners, on the player's side
+  y: 3.2,
+  z: 2.4,
   barrel: 0.95, // pivot to muzzle
 };
+// Flight time of a lob over horizontal distance d: base + perUnit * d.
+export const FLIGHT = { base: 0.4, perUnit: 0.026 };
 export const LANDING = {
   s: 1.05, // aim line, in stage coordinates
   sMin: 0.25, // felt strip that soaks up a lobbed medal's speed
@@ -113,7 +115,7 @@ export const TORII_MOTION = { amp: 2.4, period: 12 };
 // aside, so only well-timed medals get through.
 // It hangs just in front of the torii (ds along the slope) and swings wide
 // enough to clear the opening for part of each swing.
-export const BELL = { radius: 0.3, lift: 0.3, amp: 1.0, period: 2.0, ds: -0.5 };
+export const BELL = { radius: 0.3, lift: 0.3, amp: 1.2, period: 2.0, ds: -0.5 };
 // Bosses hover over the landing strip, where lobbed medals can hit them.
 export const BOSS = { s: LANDING.s, lift: 1.3, radius: 0.72, amp: 4.4 };
 
