@@ -544,9 +544,10 @@ export class Game {
     return this.phase === 'night' && (n.dropsLeft > 0 || (this.bank > 0 && n.fromBank < EXTRA_DROPS));
   }
 
-  // The night's balance: medals paid out minus medals taken from the bank.
+  // What counts toward the quota: the night's payouts. Extra shots are paid
+  // for from the bank, so savings can rescue a night.
   netOf(n = this.night) {
-    return n ? n.paid - n.fromBank : 0;
+    return n ? n.paid : 0;
   }
 
   extraDropsLeft() {

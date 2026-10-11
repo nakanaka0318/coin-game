@@ -51,20 +51,20 @@ export const BASE_STATS = {
 };
 
 // Once the night's medals are gone, up to EXTRA_DROPS more can be shot
-// from the bank, one medal each. They count against the night's balance.
+// from the bank, one medal each.
 export const EXTRA_DROPS = 10;
 
 // Eight nights from new moon to full moon. `phase` drives the moon icon
 // (0 = new, 1 = full). Quotas are the night's balance to reach.
 export const NIGHTS = [
   { name: '新月', reading: 'しんげつ', phase: 0.0, quota: 10 },
-  { name: '三日月', reading: 'みかづき', phase: 0.15, quota: 15 },
+  { name: '三日月', reading: 'みかづき', phase: 0.15, quota: 12 },
   { name: '七日月', reading: 'なのかづき', phase: 0.32, quota: 21 },
   { name: '上弦の月', reading: 'じょうげんのつき', phase: 0.5, quota: 28, boss: 'oni' },
-  { name: '十日夜', reading: 'とおかんや', phase: 0.62, quota: 37 },
+  { name: '十日夜', reading: 'とおかんや', phase: 0.62, quota: 38 },
   { name: '十三夜', reading: 'じゅうさんや', phase: 0.78, quota: 48 },
-  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 60 },
-  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 75, boss: 'fullmoon' },
+  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 62 },
+  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 80, boss: 'fullmoon' },
 ];
 
 // Boss nights. Each brings an enemy (ENEMIES) that hovers over the landing

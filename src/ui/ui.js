@@ -55,7 +55,7 @@ export class UI {
     e.quotaOf = h('span', { class: 'num' });
     e.bar = h('i');
     e.quota = h('div', { class: 'quota' },
-      h('div', { class: 'quota-top' }, h('small', {}, '今夜の収支'), e.quotaB, e.quotaOf),
+      h('div', { class: 'quota-top' }, h('small', {}, '今夜の払い出し'), e.quotaB, e.quotaOf),
       h('div', { class: 'bar' }, e.bar));
     e.bank = h('b', { class: 'num' });
     e.bankStat = h('div', { class: 'stat bank' }, h('small', {}, '持ちメダル'), e.bank);
@@ -436,7 +436,7 @@ export class UI {
       h('p', { class: 'eyebrow' }, `第${night.index + 1}夜 ・ ${night.reading}${night.eclipse ? ` ・ ${ECLIPSES[night.eclipse].name}` : ''}`),
       h('h2', {}, night.name),
       facts,
-      h('p', { class: 'muted' }, '今夜のメダルをピッチャーで撃ち込む。手前から落ちてお賽銭箱に入ったメダルだけが払い出し。今夜の収支がノルマに届けば、夜明けにその枚数を月へ上納して次の夜へ。'),
+      h('p', { class: 'muted' }, '今夜のメダルをピッチャーで撃ち込む。手前から落ちてお賽銭箱に入ったメダルだけが払い出し。今夜の払い出しがノルマに届けば、夜明けにその枚数を月へ上納して次の夜へ。'),
       boss,
       omen,
       curse,
@@ -449,7 +449,7 @@ export class UI {
     const card = h('div', { class: 'card' },
       h('p', { class: 'eyebrow' }, `第${night.index + 1}夜 ・ ${night.name}`),
       h('h2', {}, '夜明け'),
-      h('p', {}, `今夜の収支 +${night.paid - night.fromBank}枚 (払い出し ${night.paid} − 追加投入 ${night.fromBank}) / ノルマ ${night.quota}枚`),
+      h('p', {}, `今夜の払い出し ${night.paid}枚${night.fromBank ? ` (追加投入 ${night.fromBank}回)` : ''} / ノルマ ${night.quota}枚`),
       h('div', { class: 'ledger' },
         h('div', {}, h('span', {}, '月へ上納'), h('span', { class: 'num' }, `−${r.tribute}`)),
         h('div', {}, h('span', {}, '夜明けの褒美'), h('span', { class: 'num' }, `+${r.base}`)),
@@ -533,7 +533,7 @@ export class UI {
       h('div', { class: 'shelf-label' }, `手持ち (お守り ${game.charms.length}/${game.stats.maxCharms} ・ お札 ${game.talismans.length}/${game.stats.talismanSlots})`),
       owned,
       h('details', { class: 'stat-details' }, h('summary', {}, 'いまの能力 (月の社とお守りの効果込み)'), stats),
-      h('p', { class: 'muted', style: 'margin-top:14px' }, `持ちメダルは、今夜のメダルが尽きた後の追加投入 (${EXTRA_DROPS}回まで) にも使える。`),
+      h('p', { class: 'muted', style: 'margin-top:14px' }, `持ちメダルは、今夜のメダルが尽きた後の追加投入 (1枚ずつ、${EXTRA_DROPS}回まで) にも使える。足りない夜の助けになる。`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn', disabled: game.bank < game.rerollCost(), onclick: () => this.on.reroll() }, game.rerollCost() === 0 ? '品替え (無料)' : `品替え (${game.rerollCost()}枚)`),
         h('button', { class: 'btn primary', onclick: () => this.on.leaveShop() }, '次の夜へ')));
@@ -545,7 +545,7 @@ export class UI {
     const card = h('div', { class: 'card' },
       h('p', { class: 'eyebrow' }, `第${n.index + 1}夜 ・ ${n.name}`),
       h('h2', {}, '月が雲に隠れた'),
-      h('p', {}, `今夜の収支 ${n.paid - n.fromBank}枚。上納ノルマ ${n.quota}枚に届かなかった。`),
+      h('p', {}, `今夜の払い出し ${n.paid}枚。上納ノルマ ${n.quota}枚に届かなかった。`),
       h('div', { class: 'ledger plain' },
         h('div', {}, h('span', {}, '越えた夜'), h('span', { class: 'num' }, `${n.index}夜`)),
         h('div', {}, h('span', {}, 'ラン中の払い出し'), h('span', { class: 'num' }, `${game.run.paid}枚`)),
@@ -591,8 +591,8 @@ export class UI {
         h('li', {}, 'メダルは揺れる釘を抜けてプッシャーへ。手前の縁から落ちて、下を動くお賽銭箱に入ったメダルだけが払い出し。箱を外すと没収。'),
         h('li', {}, 'ゆっくり動く鳥居をくぐると液晶スロットの保留。鳥居の前では鈴が大きく揺れていて、当たるとメダルが弾かれる。鈴が外れた瞬間を狙おう。保留ランプの色 (青・緑・赤・金・虹) が当たりの予感。7揃いでジャックポット、月揃いで月玉とフィーバー。'),
         h('li', {}, 'ボスの夜 (第4夜・第8夜) には着地点の上にボスが浮かぶ。狙いを合わせてメダルを当て、体力を削り切れば退治。生きている間は横取りや天狗風などで邪魔をしてくる。'),
-        h('li', {}, '各夜には「今夜のメダル」と上納ノルマがある。今夜の収支 (払い出し − 追加投入) がノルマに届けば、夜明けにノルマ分を上納して次の夜へ。届かなければランは終わり。'),
-        h('li', {}, `今夜のメダルを使い切ったら、持ちメダルから${EXTRA_DROPS}回まで追加投入できる。追加投入した枚数は今夜の収支から引かれる。最後の投入から数秒たつと夜が明ける。`),
+        h('li', {}, '各夜には「今夜のメダル」と上納ノルマがある。今夜の払い出しがノルマに届けば、夜明けにノルマ分を持ちメダルから上納して次の夜へ。届かなければランは終わり。'),
+        h('li', {}, `今夜のメダルを使い切ったら、持ちメダルを1枚ずつ使って${EXTRA_DROPS}回まで追加投入できる。ノルマに届かない夜の助けになる。最後の投入から数秒たつと夜が明ける。`),
         h('li', {}, '夜明けの後は夜店。上納の残りの持ちメダルで買い物をする。お守りは盤面をずっと変え、お札は夜の間に一度だけ使える (', h('kbd', {}, '1'), '〜', h('kbd', {}, '3'), ')。'),
         h('li', {}, 'ランが終わると、進んだ夜の数とボス退治に応じて月の欠片がもらえる。タイトルの「月の社」で、ピッチャーやお賽銭箱をずっと強化できる。'),
         h('li', {}, '満月を越えると、より難しい「月蝕」の難易度が順に解放される。ノルマや値段が上がり、ボスが増えるが、月の欠片も多くもらえる。'),

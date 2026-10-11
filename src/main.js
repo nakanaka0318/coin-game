@@ -361,6 +361,7 @@ function onGameEvent(type, d) {
       ui.showIntro(d, () => {
         audio.nightStart(d.index);
         if (d.replenished >= 8) ui.toast(`月兎が台にメダルを${d.replenished}枚補充した`);
+        if (game.boss?.alive) setTimeout(() => ui.toast(`${game.boss.name}が現れた! 狙いを合わせてメダルを当てよう`, 'bad'), 400);
       });
       view.setView('overview');
       persist();

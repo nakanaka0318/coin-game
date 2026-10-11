@@ -1,6 +1,8 @@
 // Balance harness: a bot plays with real physics and reports payout rates.
 //   node tools/balance.mjs steady [shots=300] [interval=0.5] [aim=track|mid|spread]
 //   node tools/balance.mjs run [runs=3]          (env AIM, META, FIRST, ECLIPSE)
+//   ENDLESS=1 plays all eight nights even when a quota is missed (the night
+//   pays what it can) and prints each night's balance, for setting quotas.
 import { makeGame, step, aimFor } from './bot.mjs';
 
 const mode = process.argv[2] || 'steady';
@@ -36,6 +38,14 @@ if (mode === 'run') {
   for (let k = first; k < first + runs; k++) {
     const { world, game, counters } = makeGame(1000 + k);
     game.newRun(1000 + k, Number(process.env.ECLIPSE || 0));
+    const nets = [];
+    const dawn = game._dawn.bind(game);
+    game._dawn = () => {
+      const n = game.night;
+      nets.push(game.netOf(n));
+      if (process.env.ENDLESS && game.netOf(n) < n.quota) n.quota = Math.max(0, game.netOf(n));
+      dawn();
+    };
     let t = 0, next = 0;
     const log = [];
     let guard = 0;
@@ -43,7 +53,9 @@ if (mode === 'run') {
       if (game.phase === 'night') {
         const n = game.night;
         if (game.talismans.length && n.dropsLeft < 6) game.useTalisman(0);
-        const want = n.dropsLeft > 0 || game.netOf(n) < n.quota;
+        // Extra shots from the bank only once the board has settled (a few
+        // calm seconds), since medals still on their way may cover the quota.
+        const want = n.dropsLeft > 0 || (game.netOf(n) < n.quota && n.grace < 4);
         if (t >= next && want && game.canFire()) { game.setAim(aimFor(game, aim)); game.requestFire(); next = t + game.stats.fireInterval; }
         step(world, game);
         t += 1 / 60;
@@ -63,6 +75,7 @@ if (mode === 'run') {
     log.push(`[run ${k}] END ${game.phase} at ${n.name}: net ${game.netOf(n)}/${n.quota} catch ${n.caught}/${n.caught + n.missed} bank ${game.bank} charms [${game.charms.join(',')}]`);
     console.log(log[log.length - 1]);
     results.push(game.phase === 'clear' ? 8 : game.nightIndex);
+    console.log(`NETS ${JSON.stringify(nets)}`);
   }
   console.log('nights cleared', results);
 }
