@@ -12,16 +12,18 @@ export const COIN = {
   angularDamping: 0.35,
 };
 
+// Gold medals and the rainbow 小判 are the same size as silver medals; they
+// differ only in look and value.
 export const GOLD_COIN = {
-  radius: 0.62,
-  halfHeight: 0.07,
+  radius: COIN.radius,
+  halfHeight: COIN.halfHeight,
   density: 1.1,
 };
 
-// 大判: a big, very valuable gold coin (unlocked at the moon shrine).
+// 小判: a very valuable rainbow coin (unlocked at the moon shrine).
 export const OBAN = {
-  radius: 0.74,
-  halfHeight: 0.085,
+  radius: COIN.radius,
+  halfHeight: COIN.halfHeight,
   density: 1.2,
 };
 

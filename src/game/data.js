@@ -260,7 +260,7 @@ export const SHRINE = [
   { id: 'boxSpeed', name: 'お賽銭箱の速さ', seal: '駆', rank: 3, max: 8, desc: '落ちてくるメダルへ箱が速く動く。', effect: (lv) => `×${(1 + 0.3 * lv).toFixed(1)}`, apply: (s, lv) => { s.boxSpeed *= 1 + 0.3 * lv; } },
   { id: 'boxSize', name: 'お賽銭箱の大きさ', seal: '広', rank: 7, max: 8, desc: '箱の幅が広がる。', effect: (lv) => `幅 +${(0.38 * lv).toFixed(1)}`, apply: (s, lv) => { s.boxWidth += 0.38 * lv; } },
   { id: 'goldRate', name: '金メダルの出現率', seal: '金', rank: 3, max: 8, desc: 'ちょっと高い金メダル (3枚分) を撃つ確率が上がる。', effect: (lv) => `+${(2.5 * lv).toFixed(1)}%`, apply: (s, lv) => { s.goldChance += 0.025 * lv; } },
-  { id: 'oban', name: '大判', seal: '判', rank: 5, max: 1, desc: 'めっちゃ高い大判 (20枚分) を撃つようになる。', effect: () => '出現 3%', apply: (s, lv) => { s.obanChance += 0.03 * lv; } },
+  { id: 'oban', name: '虹の小判', seal: '判', rank: 5, max: 1, desc: 'めっちゃ高い虹色の小判 (20枚分) を撃つようになる。', effect: () => '出現 3%', apply: (s, lv) => { s.obanChance += 0.03 * lv; } },
   { id: 'reroll', name: '夜店の目利き', seal: '替', rank: 7, max: 1, desc: '品替えが1枚安くなり、毎回1度は無料。', effect: () => '割引 + 無料1回', apply: (s, lv) => { s.rerollBase -= lv; s.freeRerolls += lv; } },
   { id: 'torii', name: '大鳥居', seal: '鳥', rank: 8, max: 1, desc: '鳥居が少し大きくなる。', effect: () => '幅 +20%', apply: (s, lv) => { s.checkerHalfGap += 0.14 * lv; } },
   { id: 'cashback', name: 'お賽銭返し', seal: '返', rank: 6, max: 1, desc: '箱に入らなかったメダルも、30%で1枚戻ってくる。', effect: () => '30%', apply: (s, lv) => { s.cashback = 0.3 * lv; } },

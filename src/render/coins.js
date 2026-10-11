@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { COIN, GOLD_COIN, OBAN, BALL } from '../sim/config.js';
 import { KIND } from '../sim/physics.js';
-import { makeCoinFace, makeReededEdge } from './textures.js';
+import { makeCoinFace, makeReededEdge, makeRainbowStrip } from './textures.js';
 
 function coinGeometry(radius, halfHeight, segments = 40) {
   const b = Math.min(0.03, halfHeight * 0.5);
@@ -51,8 +51,19 @@ export class CoinRenderer {
       coinGeometry(COIN.radius, COIN.halfHeight), mk(0xe9ecf2, silverFace, 0.3), capacity);
     this.gold = new THREE.InstancedMesh(
       coinGeometry(GOLD_COIN.radius, GOLD_COIN.halfHeight), mk(0xf5c55a, goldFace, 0.22), 200);
+    // The 小判 shimmers: rainbow face and rim that slowly turn, with a glow.
+    this.rainbowFace = obanFace.map;
+    this.rainbowFace.center.set(0.5, 0.5);
+    this.rainbowRim = makeRainbowStrip();
+    const rainbow = (map, normalMap) => new THREE.MeshPhysicalMaterial({
+      color: 0xffffff, map, normalMap, normalScale: new THREE.Vector2(1, 1),
+      metalness: 0.55, roughness: 0.18, emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.32,
+      iridescence: 1, iridescenceIOR: 1.6, clearcoat: 1, clearcoatRoughness: 0.08,
+    });
+    const rim = rainbow(this.rainbowRim, edgeNormal);
+    const face = rainbow(this.rainbowFace, obanFace.normalMap);
     this.oban = new THREE.InstancedMesh(
-      coinGeometry(OBAN.radius, OBAN.halfHeight), mk(0xffb84a, obanFace, 0.18), 60);
+      coinGeometry(OBAN.radius, OBAN.halfHeight), [rim, face, face], 60);
     this.ball = new THREE.InstancedMesh(
       new THREE.SphereGeometry(BALL.radius, 40, 28),
       new THREE.MeshPhysicalMaterial({
@@ -79,6 +90,11 @@ export class CoinRenderer {
   }
 
   update(world) {
+    if (this.oban.count) {
+      const t = performance.now() / 1000;
+      this.rainbowFace.rotation = t * 0.9;
+      this.rainbowRim.offset.x = (t * 0.25) % 1;
+    }
     const counts = [0, 0, 0, 0];
     const arrays = this.all.map((m) => m.instanceMatrix.array);
     const caps = this.all.map((m) => m.instanceMatrix.count);

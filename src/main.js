@@ -240,9 +240,15 @@ function onGameEvent(type, d) {
     case 'landed': audio.landed(d.x); break;
     case 'payout': {
       const p = screenOf(world.boxX, BOX.floorY + BOX.height + 0.3, BOX.z);
-      const kind = d.kind === KIND.BALL ? 'ball' : d.kind === KIND.GOLD || d.kind === KIND.OBAN ? 'gold' : '';
+      const kind = d.kind === KIND.BALL ? 'ball' : d.kind === KIND.OBAN ? 'rainbow' : d.kind === KIND.GOLD ? 'gold' : '';
       ui.pop(`+${d.value}`, p.x + (Math.random() - 0.5) * 30, p.y, kind);
-      sparkles.burst(world.boxX, BOX.floorY + BOX.height, BOX.z, { count: d.value > 1 ? 22 : 8, color: kind ? 0xffc23a : 0xfff1c0, speed: 2, up: 4 });
+      if (kind === 'rainbow') {
+        for (const color of [0xff5a5a, 0xffd34a, 0x6be08a, 0x5ab4ff, 0xc77dff]) {
+          sparkles.burst(world.boxX, BOX.floorY + BOX.height, BOX.z, { count: 10, color, speed: 2.6, up: 4.5 });
+        }
+      } else {
+        sparkles.burst(world.boxX, BOX.floorY + BOX.height, BOX.z, { count: d.value > 1 ? 22 : 8, color: kind ? 0xffc23a : 0xfff1c0, speed: 2, up: 4 });
+      }
       cabinet.boxCatch();
       audio.boxCatch(d.value, world.boxX);
       audio.payout(d.value, world.boxX);

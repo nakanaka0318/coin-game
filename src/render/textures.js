@@ -132,7 +132,7 @@ export function makeCoinFace(kind, size = 256) {
     ctx.fill();
   }
   if (kind === 'oban') {
-    // Hammered texture lines with the characters 大判.
+    // Hammered texture lines with the characters 小判.
     ctx.strokeStyle = '#777';
     ctx.lineWidth = size * 0.012;
     for (let i = -6; i <= 6; i++) {
@@ -145,7 +145,7 @@ export function makeCoinFace(kind, size = 256) {
     ctx.font = `900 ${size * 0.26}px "Dela Gothic One", "Hiragino Mincho ProN", serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('大', c, c - size * 0.14);
+    ctx.fillText('小', c, c - size * 0.14);
     ctx.fillText('判', c, c + size * 0.15);
   } else if (kind === 'gold') {
     ctx.fillStyle = '#ddd';
@@ -173,7 +173,25 @@ export function makeCoinFace(kind, size = 256) {
   const cctx = color.getContext('2d');
   cctx.fillStyle = '#fff';
   cctx.fillRect(0, 0, size, size);
-  cctx.globalAlpha = 0.22;
+  if (kind === 'oban') {
+    // Rainbow wheel under the relief.
+    const slices = 72;
+    for (let i = 0; i < slices; i++) {
+      const a0 = (i / slices) * Math.PI * 2, a1 = ((i + 1.5) / slices) * Math.PI * 2;
+      cctx.fillStyle = `hsl(${(i / slices) * 360}, 95%, 62%)`;
+      cctx.beginPath();
+      cctx.moveTo(c, c);
+      cctx.arc(c, c, size * 0.75, a0, a1);
+      cctx.closePath();
+      cctx.fill();
+    }
+    const glow = cctx.createRadialGradient(c, c, 0, c, c, size * 0.5);
+    glow.addColorStop(0, 'rgba(255,255,255,0.55)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    cctx.fillStyle = glow;
+    cctx.fillRect(0, 0, size, size);
+  }
+  cctx.globalAlpha = kind === 'oban' ? 0.35 : 0.22;
   cctx.globalCompositeOperation = 'multiply';
   cctx.drawImage(blurred, 0, 0);
   const tex = (cv, srgb) => {
@@ -183,6 +201,20 @@ export function makeCoinFace(kind, size = 256) {
     return t;
   };
   return { normalMap: tex(normal, false), map: tex(color, true) };
+}
+
+// Rainbow band for the rim of the 小判, hue running around the edge.
+export function makeRainbowStrip(w = 256, h = 8) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  for (let x = 0; x < w; x++) {
+    ctx.fillStyle = `hsl(${(x / w) * 720 % 360}, 95%, 62%)`;
+    ctx.fillRect(x, 0, 1, h);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
 }
 
 // Reeded edge for the medal rim.

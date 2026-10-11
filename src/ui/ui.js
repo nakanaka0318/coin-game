@@ -428,7 +428,7 @@ export class UI {
           h('div', { class: 'boss-title' }, h('strong', {}, E.name), h('span', { class: 'num' }, `体力 ${night.bossHp ?? E.hp}`)),
           h('p', {}, h('em', {}, '妨害 '), E.curse),
           h('p', {}, h('em', {}, '退治 '), E.reward),
-          h('p', { class: 'muted' }, '着地点の上に浮かぶボスに狙いを合わせて、メダルを当てて体力を削ろう (金メダルは3、大判は8ダメージ)。')));
+          h('p', { class: 'muted' }, '着地点の上に浮かぶボスに狙いを合わせて、メダルを当てて体力を削ろう (金メダルは3、小判は8ダメージ)。')));
     }
     const moon = h('span', { class: 'moon-big', html: moonSvg(night.moonPhase, 84) });
     const card = h('div', { class: 'card night-intro' },
@@ -510,7 +510,7 @@ export class UI {
       ['お賽銭箱の幅', st.boxWidth.toFixed(1)],
       ['お賽銭箱の速さ', st.boxSpeed.toFixed(1)],
       ['金メダル率', pct(st.goldChance)],
-      st.obanChance ? ['大判率', pct(st.obanChance)] : null,
+      st.obanChance ? ['小判率', pct(st.obanChance)] : null,
       ['金メダルの価値', `${st.goldValue}枚`],
       ['今夜のメダル', `${st.dropsPerNight}枚`],
       ['保留の上限', `${st.stockMax}`],

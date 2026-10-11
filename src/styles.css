@@ -1016,3 +1016,13 @@ kbd {
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 14px; margin-top: 8px; }
 .stat-grid div { display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px dashed rgba(240, 201, 106, 0.18); padding: 2px 0; }
 .stat-grid span { color: var(--muted); }
+
+.pop.rainbow {
+  font-size: 34px;
+  background: linear-gradient(90deg, #ff5a5a, #ffd34a, #6be08a, #5ab4ff, #c77dff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+}
