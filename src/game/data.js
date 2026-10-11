@@ -59,12 +59,12 @@ export const EXTRA_DROPS = 10;
 export const NIGHTS = [
   { name: '新月', reading: 'しんげつ', phase: 0.0, quota: 10 },
   { name: '三日月', reading: 'みかづき', phase: 0.15, quota: 12 },
-  { name: '七日月', reading: 'なのかづき', phase: 0.32, quota: 21 },
-  { name: '上弦の月', reading: 'じょうげんのつき', phase: 0.5, quota: 28, boss: 'oni' },
-  { name: '十日夜', reading: 'とおかんや', phase: 0.62, quota: 38 },
-  { name: '十三夜', reading: 'じゅうさんや', phase: 0.78, quota: 48 },
-  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 62 },
-  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 80, boss: 'fullmoon' },
+  { name: '七日月', reading: 'なのかづき', phase: 0.32, quota: 22 },
+  { name: '上弦の月', reading: 'じょうげんのつき', phase: 0.5, quota: 30, boss: 'oni' },
+  { name: '十日夜', reading: 'とおかんや', phase: 0.62, quota: 44 },
+  { name: '十三夜', reading: 'じゅうさんや', phase: 0.78, quota: 56 },
+  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 72 },
+  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 96, boss: 'fullmoon' },
 ];
 
 // Boss nights. Each brings an enemy (ENEMIES) that hovers over the landing
