@@ -63,8 +63,8 @@ export const NIGHTS = [
   { name: '上弦の月', reading: 'じょうげんのつき', phase: 0.5, quota: 30, boss: 'oni' },
   { name: '十日夜', reading: 'とおかんや', phase: 0.62, quota: 44 },
   { name: '十三夜', reading: 'じゅうさんや', phase: 0.78, quota: 56 },
-  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 74 },
-  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 100, boss: 'fullmoon' },
+  { name: '小望月', reading: 'こもちづき', phase: 0.9, quota: 78 },
+  { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 108, boss: 'fullmoon' },
 ];
 
 // Boss nights. Each brings an enemy (ENEMIES) that hovers over the landing
@@ -115,11 +115,11 @@ export const ENEMIES = {
 // those below it; clearing a level unlocks the next.
 export const ECLIPSES = [
   { name: '並', rule: 'ふつうの月夜。' },
-  { name: '月蝕 一', rule: 'ノルマ +15%。', apply: (s) => { s.quotaMult *= 1.15; } },
-  { name: '月蝕 二', rule: '夜店の値段 +30%、品替え +1枚。', apply: (s) => { s.shopPrice *= 1.3; s.rerollBase += 1; } },
-  { name: '月蝕 三', rule: '第6夜に化け狸が現れ、ボスの体力 +50%。', apply: (s) => { s.bossHp *= 1.5; } },
-  { name: '月蝕 四', rule: '鳥居の鈴が大きく速くなり、今夜のメダル −3枚。', apply: (s) => { s.bellRadius += 0.08; s.bellSpeed *= 1.3; s.dropsPerNight -= 3; } },
-  { name: '月蝕 五', rule: '毎晩、悪い縁起がもうひとつ重なり、ノルマさらに +15%。', apply: (s) => { s.quotaMult *= 1.15; } },
+  { name: '月蝕 一', rule: 'ノルマ +20%。', apply: (s) => { s.quotaMult *= 1.2; } },
+  { name: '月蝕 二', rule: '夜店の値段 +30%、品替え +1枚、ボスの体力 +50%、ノルマさらに +20%。', apply: (s) => { s.shopPrice *= 1.3; s.rerollBase += 1; s.bossHp *= 1.5; s.quotaMult *= 1.2; } },
+  { name: '月蝕 三', rule: '第6夜に化け狸が現れ、ノルマさらに +15%。', apply: (s) => { s.quotaMult *= 1.15; } },
+  { name: '月蝕 四', rule: '鳥居の鈴が大きく速くなり、今夜のメダル −3枚、ノルマさらに +20%。', apply: (s) => { s.bellRadius += 0.08; s.bellSpeed *= 1.3; s.dropsPerNight -= 3; s.quotaMult *= 1.2; } },
+  { name: '月蝕 五', rule: '毎晩、悪い縁起がもうひとつ重なり、金メダルの価値 −1枚、ノルマさらに +25%。', apply: (s) => { s.goldValue -= 1; s.quotaMult *= 1.25; } },
 ];
 export const ECLIPSE_MAX = ECLIPSES.length - 1;
 export const ECLIPSE_TANUKI = 3; // from this level, night 6 is a boss night
