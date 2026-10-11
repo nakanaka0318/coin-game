@@ -70,6 +70,24 @@ await step('dawn + shop buy + sell', async () => {
   await click('次の夜へ');
   await click('夜をはじめる');
 });
+await step('boss night: hit and defeat', async () => {
+  await page.evaluate(() => { const g = window.__game; g.nightIndex = 3; g.startNight(); });
+  await click('夜をはじめる');
+  const res = await page.evaluate(() => {
+    const g = window.__game;
+    if (!g.boss?.alive) return 'no boss';
+    g.boss.hp = 2;
+    for (let i = 0; i < 1200 && g.boss?.alive; i++) {
+      if (i % 20 === 0) { g.setAim(g.boss.x + g.boss.vx * 0.5); g.requestFire(); }
+      g.world.step();
+      g.update(1 / 60);
+    }
+    return g.boss && !g.boss.alive ? 'ok' : `alive hp ${g.boss?.hp}`;
+  });
+  if (res !== 'ok') throw new Error(res);
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${out}/f-boss.png` });
+});
 await step('game over', async () => {
   await page.evaluate(() => { const g = window.__game; g.night.dropsLeft = 0; g.bank = 0; g.night.grace = 0.01; g.rain = []; g.slot.queue = []; g.fever = 0; g.slot.spinning = false; });
   await ff(30);
@@ -77,6 +95,10 @@ await step('game over', async () => {
   await page.screenshot({ path: `${out}/f-over.png` });
   if (!(await page.getByRole('button', { name: 'もう一度' }).count())) throw new Error('no game over screen');
   await click('タイトルへ');
+});
+await step('eclipse levels locked until a clear', async () => {
+  const locked = await page.evaluate(() => document.querySelectorAll('.eclipse-pick .chip:disabled').length);
+  if (locked !== 5) throw new Error(`locked chips ${locked}`);
 });
 await step('moon shrine buy', async () => {
   await click('月の社');
