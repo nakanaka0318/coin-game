@@ -1,6 +1,6 @@
 // Balance harness: a bot plays with real physics and reports payout rates.
 //   node tools/balance.mjs steady [shots=300] [interval=0.5] [aim=track|mid|spread]
-//   node tools/balance.mjs run [runs=3]          (env AIM, META, FIRST)
+//   node tools/balance.mjs run [runs=3]          (env AIM, META, FIRST, ECLIPSE)
 import { makeGame, step, aimFor } from './bot.mjs';
 
 const mode = process.argv[2] || 'steady';
@@ -35,7 +35,7 @@ if (mode === 'run') {
   const results = [];
   for (let k = first; k < first + runs; k++) {
     const { world, game, counters } = makeGame(1000 + k);
-    game.newRun(1000 + k);
+    game.newRun(1000 + k, Number(process.env.ECLIPSE || 0));
     let t = 0, next = 0;
     const log = [];
     let guard = 0;
@@ -49,7 +49,7 @@ if (mode === 'run') {
         t += 1 / 60;
       } else if (game.phase === 'dawn') {
         const n = game.night;
-        log.push(`[run ${k}] ${n.name}: net ${game.netOf(n)}/${n.quota} shots ${n.dropsTotal}+${n.fromBank} catch ${n.caught}/${n.caught + n.missed} bank ${game.bank} charms [${game.charms.join(',')}] ${n.omen?.name || ''} fevers ${counters.fever || 0}`);
+        log.push(`[run ${k}] ${n.name}: net ${game.netOf(n)}/${n.quota} shots ${n.dropsTotal}+${n.fromBank} catch ${n.caught}/${n.caught + n.missed} bank ${game.bank} charms [${game.charms.join(',')}] ${n.omen?.name || n.boss?.name || ''} fevers ${counters.fever || 0} kills ${game.run.bossKills || 0}`);
         console.log(log[log.length - 1]);
         for (const key of Object.keys(counters)) delete counters[key];
         game.openShop();

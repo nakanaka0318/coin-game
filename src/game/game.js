@@ -3,20 +3,22 @@
 // Has no DOM or rendering dependencies so it can be simulated headlessly.
 import { KIND } from '../sim/physics.js';
 import {
-  HALF_W, FRONT_Z, RAIN, STAGE, PUSHER, BOX, PIT_Y, PITCHER, LANDING, AIM, WORLD,
+  HALF_W, FRONT_Z, RAIN, STAGE, PUSHER, BOX, PIT_Y, PITCHER, LANDING, AIM, WORLD, BOSS,
   stagePoint,
 } from '../sim/config.js';
 import { CHECKER_POST_S } from '../sim/machine.js';
 import {
   BASE_STATS, NIGHTS, BOSSES, OMENS, CHARMS, TALISMANS, SYMBOLS, SLOT_TABLE, FEVER_TABLE,
   OUTCOME_TIER, LAMP_COLORS, LAMP_WEIGHTS, PRESENTATION_WEIGHTS, RARITY_WEIGHT,
-  EXTRA_DROPS, SHRINE, shardsFor,
+  EXTRA_DROPS, SHRINE, shardsFor, ENEMIES, BOSS_DAMAGE, ECLIPSES, ECLIPSE_MAX, ECLIPSE_TANUKI,
+  ECLIPSE_CURSE, eclipseShardMult,
 } from './data.js';
 import { makeRng } from './rng.js';
 
 const FLAG_CHECKED = 1;
 const FLAG_FLIGHT = 2; // lobbed by a pitcher, not yet landed
 const FLAG_CAUGHT = 4; // landed in the offering box
+const FLAG_HIT = 8; // already struck the boss
 const MAX_BODIES = 950;
 const GRACE_SECONDS = 8;
 const JP_BASE = 50;
@@ -72,6 +74,8 @@ export class Game {
     };
     this.fever = 0; // spins left in fever
     this.feverChain = 0;
+    this.eclipse = 0; // 月蝕 level of the current run
+    this.boss = null; // the boss night's enemy
     this.rain = [];
     this.timers = { tremor: 0, foxfire: 0, double: 0, mallet: 0, refill: 0, cashback: 0 };
     this.night = null;
@@ -147,9 +151,11 @@ export class Game {
     return Math.min(this.meta[id] || 0, shrineById[id]?.max ?? 0);
   }
 
-  newRun(seed) {
+  newRun(seed, eclipse = 0) {
     this.rng = makeRng(seed);
     this.mode = 'run';
+    this.eclipse = Math.max(0, Math.min(ECLIPSE_MAX, eclipse | 0));
+    this._dismissBoss();
     this.bank = 5 + 5 * this.metaLevel('startBank');
     this.charms = [];
     this.talismans = ['quake'];
@@ -159,7 +165,10 @@ export class Game {
     this.jpPool = JP_BASE;
     this.jpFrac = 0;
     this.fever = 0;
-    this.run = { paid: 0, dropped: 0, jackpots: 0, fevers: 0, seed: this.rng.state(), caught: 0, missed: 0 };
+    this.run = {
+      paid: 0, dropped: 0, jackpots: 0, fevers: 0, seed: this.rng.state(), caught: 0, missed: 0,
+      bossKills: 0, bossShards: 0,
+    };
     this.slot.queue = [];
     this.slot.spinning = false;
     this.rain = [];
@@ -171,6 +180,7 @@ export class Game {
   newFreePlay() {
     this.mode = 'free';
     this.phase = 'free';
+    this._dismissBoss();
     this.charms = [];
     this.talismans = [];
     if (this.bank <= 0) this.bank = 50;
@@ -193,6 +203,7 @@ export class Game {
       if (lv > 0) u.apply(s, lv);
     }
     for (const id of this.charms) charmById[id]?.apply(s);
+    if (this.mode === 'run') for (let l = 1; l <= this.eclipse; l++) ECLIPSES[l].apply(s);
     if (extra) extra(s);
     s.rerollBase = Math.max(1, s.rerollBase);
     this.stats = s;
@@ -204,6 +215,7 @@ export class Game {
     w.setEnabled('sideGuard', !!s.sideGuards);
     w.setEnabled('wallFront', !s.shortWalls);
     w.setBoxWidth(s.boxWidth);
+    w.setBell(s.bellRadius, s.bellSpeed);
     this.emit('stats', s);
   }
 
@@ -234,31 +246,39 @@ export class Game {
     const def = NIGHTS[this.nightIndex];
     const r = this.rng;
     const replenished = this.nightIndex > 0 ? this._replenishField() : 0;
+    const bossKey = this._bossKeyFor(this.nightIndex);
     let omen = null;
-    if (!def.boss && this.nightIndex > 0) omen = r.pick(OMENS);
-    const boss = def.boss ? BOSSES[def.boss] : null;
+    if (!bossKey && this.nightIndex > 0) omen = r.pick(OMENS);
+    // From 月蝕 五 every night also carries a bad omen.
+    let curse = null;
+    if (this.eclipse >= ECLIPSE_CURSE) curse = r.pick(OMENS.filter((o) => !o.good && o.id !== omen?.id));
+    const boss = bossKey ? BOSSES[bossKey] : null;
     this._recomputeStats((s) => {
       if (omen) omen.apply(s);
+      if (curse) curse.apply(s);
       if (boss) boss.apply(s);
     });
+    const brief = (o) => (o ? { id: o.id, name: o.name, desc: o.desc, good: o.good } : null);
     this.night = {
       index: this.nightIndex,
       name: def.name,
       reading: def.reading,
       moonPhase: def.phase,
-      quota: def.quota,
+      quota: Math.round(def.quota * this.stats.quotaMult),
       paid: 0,
       dropsLeft: this.stats.dropsPerNight,
       dropsTotal: this.stats.dropsPerNight,
       fromBank: 0,
       caught: 0,
       missed: 0,
-      omen: omen ? { id: omen.id, name: omen.name, desc: omen.desc, good: omen.good } : null,
-      boss: boss ? { name: boss.name, desc: boss.desc } : null,
+      omen: brief(omen),
+      curse: brief(curse),
+      boss: boss ? { key: bossKey, name: boss.name, desc: boss.desc, enemy: boss.enemy } : null,
       grace: GRACE_SECONDS,
       cleared: false,
       time: 0,
       replenished,
+      eclipse: this.eclipse,
     };
     this.timers.tremor = this.stats.tremor || 0;
     this.timers.foxfire = this.stats.foxfire || 0;
@@ -266,8 +286,127 @@ export class Game {
     this.pendingShot = false;
     this.cooldown = 0;
     this.phase = 'night';
+    this._spawnBoss(boss?.enemy);
     if (this.stats.openingRain) this.queueRain(this.stats.openingRain, KIND.SILVER, 0.4);
     this.emit('nightStart', this.night);
+  }
+
+  _bossKeyFor(index) {
+    const def = NIGHTS[index];
+    if (def.boss) return def.boss;
+    if (this.mode === 'run' && this.eclipse >= ECLIPSE_TANUKI && index === 5) return 'tanuki';
+    return null;
+  }
+
+  // --- bosses ----------------------------------------------------------------
+
+  _spawnBoss(key) {
+    this._dismissBoss();
+    if (!key) return;
+    const E = ENEMIES[key];
+    const hp = Math.round(E.hp * this.stats.bossHp);
+    this.boss = {
+      key, name: E.name, hp, maxHp: hp, x: 0, vx: 0, target: 0, wait: 2,
+      alive: true, steal: 0, stolen: 0, gustT: 9,
+    };
+    this.world.setBossX(0);
+    this.world.setBoss(true);
+    if (this.night) this.night.bossHp = hp;
+    this.emit('bossSpawn', this.boss);
+  }
+
+  _dismissBoss() {
+    this.world.setBoss(false);
+    this.boss = null;
+  }
+
+  _bossTick(dt) {
+    const b = this.boss;
+    if (!b || !b.alive) return;
+    const w = this.world;
+    const hits = w.hits;
+    for (let j = 0; j < hits.length; j += 2) {
+      if (hits[j] !== 'boss') continue;
+      const i = hits[j + 1];
+      if (w.kind[i] < 0 || (w.flags[i] & FLAG_HIT)) continue;
+      w.flags[i] |= FLAG_HIT;
+      const dmg = BOSS_DAMAGE[w.kind[i]] || 1;
+      b.hp = Math.max(0, b.hp - dmg);
+      this.emit('bossHit', { dmg, hp: b.hp, max: b.maxHp, x: w.pos[i * 3], y: w.pos[i * 3 + 1], z: w.pos[i * 3 + 2] });
+      if (b.hp <= 0) { this._defeatBoss(); return; }
+    }
+    if (this.phase !== 'night') return;
+    const E = ENEMIES[b.key];
+    const r = this.rng;
+    if (b.wait > 0) {
+      b.wait -= dt;
+      b.vx = 0;
+    } else {
+      const d = b.target - b.x;
+      const step = E.speed * dt;
+      if (Math.abs(d) <= step) {
+        b.x = b.target;
+        b.vx = 0;
+        b.wait = r.range(E.wait[0], E.wait[1]);
+        let t;
+        do { t = r.range(-BOSS.amp, BOSS.amp); } while (Math.abs(t - b.x) < 1.5);
+        b.target = t;
+      } else {
+        b.x += Math.sign(d) * step;
+        b.vx = Math.sign(d) * E.speed;
+      }
+    }
+    w.setBossX(b.x);
+    if (b.key === 'tengu') {
+      b.gustT -= dt;
+      if (b.gustT <= 0) { b.gustT = 9; this._tenguWind(); }
+    }
+  }
+
+  // The oni pockets every third medal that lands in the box.
+  _oniSteals(value, x) {
+    const b = this.boss;
+    if (!b?.alive || b.key !== 'oni' || this.phase !== 'night') return false;
+    b.steal += 1;
+    if (b.steal % 3) return false;
+    b.stolen += value;
+    this.emit('stolen', { x, value });
+    return true;
+  }
+
+  // 天狗風: blows the medals on the table toward the open sides.
+  _tenguWind() {
+    const w = this.world, r = this.rng;
+    for (let i = 0; i < w.highWater; i++) {
+      if (w.kind[i] < 0 || (w.flags[i] & FLAG_CAUGHT)) continue;
+      const x = w.pos[i * 3], y = w.pos[i * 3 + 1], z = w.pos[i * 3 + 2];
+      if (y < -0.3 || y > 1.6 || z < PUSHER.frontMax - 0.5) continue;
+      const m = w.mass(i);
+      const dir = x === 0 ? (r() < 0.5 ? -1 : 1) : Math.sign(x);
+      w.impulse(i, dir * m * r.range(2.2, 3.6), m * r.range(0.5, 1.0), m * r.range(-0.3, 0.6));
+    }
+    this.emit('tenguWind', {});
+  }
+
+  _defeatBoss() {
+    const b = this.boss;
+    const E = ENEMIES[b.key];
+    const p = this.world.bossPos(b.x);
+    b.alive = false;
+    b.hp = 0;
+    this.world.setBoss(false);
+    this.run.bossKills = (this.run.bossKills || 0) + 1;
+    this.run.bossShards = (this.run.bossShards || 0) + E.shards;
+    const gold = (n, delay) => {
+      for (let i = 0; i < n; i++) this._pushRain({ at: this.world.time + delay + i * 0.15, kind: KIND.GOLD });
+    };
+    switch (b.key) {
+      case 'oni': this.queueRain(10 + b.stolen * 2, KIND.SILVER, 0.4); gold(2, 0.6); break;
+      case 'tanuki': this.queueRain(15, KIND.SILVER, 0.4); gold(3, 0.6); break;
+      case 'tengu': this.queueRain(25, KIND.SILVER, 0.4); this._startFever(); break;
+      default: break;
+    }
+    this.emit('bossDefeated', { key: b.key, name: b.name, x: p.x, y: p.y, z: p.z, stolen: b.stolen, shards: E.shards });
   }
 
   // Player ends the night early (only once the quota is met).
@@ -276,13 +415,19 @@ export class Game {
     this._dawn();
   }
 
+  _shards(cleared, won) {
+    return Math.round(shardsFor(cleared, won) * eclipseShardMult(this.eclipse)) + (this.run.bossShards || 0);
+  }
+
   _dawn() {
     const n = this.night;
     const s = this.stats;
     const success = this.netOf(n) >= n.quota;
+    if (this.boss?.alive) this.emit('bossEscape', { name: this.boss.name });
+    this._dismissBoss();
     if (!success) {
       this.phase = 'over';
-      const shards = shardsFor(n.index, false);
+      const shards = this._shards(n.index, false);
       this.emit('gameOver', { night: n, run: this.run, shards, cleared: n.index });
       return;
     }
@@ -296,8 +441,8 @@ export class Game {
     n.reward = reward;
     if (this.nightIndex >= NIGHTS.length - 1) {
       this.phase = 'clear';
-      const shards = shardsFor(NIGHTS.length, true);
-      this.emit('runClear', { night: n, run: this.run, reward, shards, cleared: NIGHTS.length });
+      const shards = this._shards(NIGHTS.length, true);
+      this.emit('runClear', { night: n, run: this.run, reward, shards, cleared: NIGHTS.length, eclipse: this.eclipse });
       return;
     }
     this.phase = 'dawn';
@@ -306,6 +451,7 @@ export class Game {
 
   openShop() {
     this.phase = 'shop';
+    this._recomputeStats(); // the night's omen no longer applies
     this.shop = { charms: [], talismans: [], rerollCost: this.stats.rerollBase, freeRerolls: this.stats.freeRerolls };
     this._stockShop();
     this.emit('shop', this.shop);
@@ -324,13 +470,13 @@ export class Game {
         if (u <= 0) break;
       }
       idx = Math.min(idx, pool.length - 1);
-      picks.push({ id: pool[idx].id, price: pool[idx].price, sold: false });
+      picks.push({ id: pool[idx].id, price: Math.round(pool[idx].price * this.stats.shopPrice), sold: false });
       pool.splice(idx, 1);
     }
     this.shop.charms = picks;
     this.shop.talismans = [0, 1].map(() => {
       const t = r.pick(TALISMANS);
-      return { id: t.id, price: t.price, sold: false };
+      return { id: t.id, price: Math.round(t.price * this.stats.shopPrice), sold: false };
     });
   }
 
@@ -590,6 +736,7 @@ export class Game {
 
     if (this.phase === 'night' || this.phase === 'free') this._pitcherTick(dt);
     this._landings();
+    this._bossTick(dt);
     this._collect(false);
     this._boxTick(dt);
     this._unjam(dt);
@@ -625,6 +772,8 @@ export class Game {
   _boxTick(dt) {
     const w = this.world;
     const s = this.stats;
+    // The tanuki bewitches the box while it is around.
+    const boxSpeed = s.boxSpeed * (this.boss?.alive && this.boss.key === 'tanuki' ? 0.55 : 1);
     const g = WORLD.gravity;
     const boxX = w.boxX;
     const half = w.boxWidth / 2;
@@ -654,7 +803,7 @@ export class Game {
       const lim = HALF_W + 0.3 - half;
       let best = -Infinity;
       for (let cx = -lim; cx <= lim + 1e-6; cx += 0.25) {
-        const travel = Math.abs(cx - boxX) / s.boxSpeed;
+        const travel = Math.abs(cx - boxX) / boxSpeed;
         let score = -0.12 * Math.abs(cx - boxX);
         for (let j = 0; j < pts.length; j += 3) {
           const px = pts[j];
@@ -668,7 +817,7 @@ export class Game {
     }
     this.boxFocus = target;
     const d = w.clampBoxX(target) - boxX;
-    const maxStep = s.boxSpeed * dt;
+    const maxStep = boxSpeed * dt;
     const next = boxX + (Math.abs(d) <= maxStep ? d : Math.sign(d) * maxStep);
     this.boxV = (next - boxX) / dt;
     w.setBoxTarget(next);
@@ -775,7 +924,7 @@ export class Game {
         if (this.night) this.night.caught += 1;
         this.run.caught += 1;
         if (k === KIND.BALL) this._ballPayout(x, value);
-        else this._credit(value, x, k);
+        else if (!this._oniSteals(value, x)) this._credit(value, x, k);
         continue;
       }
       if (y < PIT_Y || y > 25 || Math.abs(x) > 16 || z < -20 || z > 16) {
@@ -1101,6 +1250,8 @@ export class Game {
       freeStats: this.freeStats,
       stock: this.slot.queue.length + (this.slot.spinning ? 1 : 0),
       fever: this.fever,
+      eclipse: this.eclipse,
+      boss: this.boss,
       rng: this.rng.state(),
       rain: this.rain.length,
       // Medals resting in the box were already paid; restoring them would pay twice.
@@ -1125,6 +1276,7 @@ export class Game {
     this.cooldown = 0;
     this.feverChain = 0;
     this.fever = d.fever || 0;
+    this.eclipse = d.eclipse || 0;
     this.rng.setState(d.rng || 1);
     this.slot.spinning = false;
     this.slot.queue = [];
@@ -1133,13 +1285,22 @@ export class Game {
     this.world.restore(d.field);
     const night = this.night;
     const omen = night?.omen ? OMENS.find((o) => o.id === night.omen.id) : null;
-    const boss = night && NIGHTS[this.nightIndex]?.boss ? BOSSES[NIGHTS[this.nightIndex].boss] : null;
+    const curse = night?.curse ? OMENS.find((o) => o.id === night.curse.id) : null;
+    const boss = night?.boss ? BOSSES[night.boss.key || NIGHTS[this.nightIndex]?.boss] : null;
     this._recomputeStats((s) => {
       if (this.phase === 'night') {
         if (omen) omen.apply(s);
+        if (curse) curse.apply(s);
         if (boss) boss.apply(s);
       }
     });
+    this.boss = null;
+    this.world.setBoss(false);
+    if (this.phase === 'night' && d.boss?.alive) {
+      this.boss = { ...d.boss };
+      this.world.setBossX(this.boss.x);
+      this.world.setBoss(true);
+    }
     for (let i = 0; i < (d.stock || 0); i++) this._addStock(true);
     if (d.rain) this.queueRain(d.rain);
     if (night) {

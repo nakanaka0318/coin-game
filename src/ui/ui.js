@@ -1,6 +1,6 @@
 // DOM layer: HUD, side rails, toasts, payout pops and the modal screens
 // (title, night intro, dawn results, shop, game over, clear, help, menu).
-import { NIGHTS, RARITY_NAME, EXTRA_DROPS, SHRINE, shrinePrice } from '../game/data.js';
+import { NIGHTS, RARITY_NAME, EXTRA_DROPS, SHRINE, shrinePrice, ENEMIES, ECLIPSES, ECLIPSE_MAX } from '../game/data.js';
 import { charmById, talismanById } from '../game/game.js';
 import { AIM } from '../sim/config.js';
 
@@ -70,6 +70,13 @@ export class UI {
       e.quota,
       h('div', { class: 'purse' }, e.fever, e.caughtStat, e.dropStat, e.bankStat));
     r.append(e.hud);
+
+    e.bossName = h('b');
+    e.bossHpText = h('span', { class: 'num' });
+    e.bossFill = h('i');
+    e.bossBar = h('div', { class: 'boss-bar', hidden: true, role: 'status' },
+      e.bossName, h('div', { class: 'boss-hp' }, e.bossFill), e.bossHpText);
+    r.append(e.bossBar);
 
     e.charms = h('div', { class: 'seals' });
     e.talis = h('div', { class: 'seals' });
@@ -207,6 +214,15 @@ export class UI {
       e.fever.textContent = `フィーバー 残り${v}`;
     });
     set('caughtVis', run, (v) => { e.caughtStat.hidden = !v; });
+    const b = game.boss;
+    set('boss', b?.alive && game.phase === 'night' ? `${b.key}:${b.hp}/${b.maxHp}` : '', (v) => {
+      e.bossBar.hidden = !v;
+      if (!v) return;
+      e.bossName.textContent = b.name;
+      e.bossHpText.textContent = `${b.hp} / ${b.maxHp}`;
+      e.bossFill.style.width = `${(b.hp / b.maxHp) * 100}%`;
+      e.bossBar.title = ENEMIES[b.key].curse;
+    });
     // Aim knob on the touch track.
     const f = (game.aim.target - this.aimMin) / (this.aimMax - this.aimMin);
     set('knob', Math.round(f * 200), () => { e.knob.style.left = `${(f * 100).toFixed(1)}%`; });
@@ -302,6 +318,30 @@ export class UI {
 
   // --- screens -------------------------------------------------------------
 
+  // Difficulty chips: 並 and the eclipse levels unlocked so far.
+  _eclipsePicker(record, settings) {
+    const unlocked = record?.eclipseMax || 0;
+    let sel = Math.min(settings.eclipse || 0, unlocked);
+    const rules = h('p', { class: 'eclipse-rules' });
+    const marks = ['並', '一', '二', '三', '四', '五'];
+    const chips = ECLIPSES.map((ec, i) => h('button', {
+      class: 'chip', disabled: i > unlocked, title: i > unlocked ? '前の難易度で満月を越えると解放' : ec.name,
+      onclick: () => { sel = i; this.on.setEclipse(i); render(); },
+    }, i > unlocked ? `${marks[i]} 🔒` : marks[i]));
+    const render = () => {
+      chips.forEach((c, i) => { c.classList.toggle('on', i === sel); c.setAttribute('aria-pressed', String(i === sel)); });
+      if (sel === 0) { rules.replaceChildren('ふつうの月夜。'); return; }
+      rules.replaceChildren(
+        h('span', {}, h('b', {}, `${ECLIPSES[sel].name}: `), ECLIPSES.slice(1, sel + 1).map((ec) => ec.rule).join(' ')),
+        h('em', {}, ` 月の欠片 ×${(1 + 0.3 * sel).toFixed(1)}`));
+    };
+    render();
+    return h('div', { class: 'eclipse-pick' },
+      h('div', { class: 'eclipse-row' }, h('small', {}, '難易度 (月蝕)'), h('div', { class: 'chips' }, ...chips)),
+      rules,
+      unlocked < ECLIPSE_MAX ? h('p', { class: 'muted eclipse-lock' }, `${unlocked === 0 ? '並' : ECLIPSES[unlocked].name}で満月を越えると ${ECLIPSES[unlocked + 1].name} が解放される。`) : null);
+  }
+
   showTitle({ hasSave, record, settings }) {
     const moonCanvas = h('canvas', { width: 220, height: 220 });
     this.on.drawTitleMoon?.(moonCanvas);
@@ -317,11 +357,13 @@ export class UI {
         h('button', { class: 'btn gold', onclick: () => this.on.openShrine() }, `月の社 (${record?.shards ?? 0})`),
         h('button', { class: 'btn', onclick: () => this.on.freePlay() }, 'フリープレイ'),
         h('button', { class: 'btn', onclick: () => this.showHelp(() => this.on.backToTitle()) }, '遊び方')),
+      this._eclipsePicker(record, settings),
       record ? h('div', { class: 'record' },
         h('span', {}, '月の欠片 ', h('b', {}, `${record.shards || 0}`)),
         h('span', {}, '最高到達 ', h('b', {}, record.best ? `第${record.best}夜` : '—')),
         h('span', {}, '満月成就 ', h('b', {}, `${record.clears || 0}回`)),
-        h('span', {}, '最大JP ', h('b', {}, `${record.bestJp || 0}枚`))) : null,
+        h('span', {}, '最大JP ', h('b', {}, `${record.bestJp || 0}枚`)),
+        h('span', {}, 'ボス退治 ', h('b', {}, `${record.bossKills || 0}回`))) : null,
       toggles);
     this._show('title', card);
   }
@@ -375,16 +417,29 @@ export class UI {
     const facts = h('div', { class: 'facts' },
       h('div', { class: 'fact' }, h('small', {}, '上納ノルマ'), h('b', { class: 'num' }, `${night.quota}枚`)),
       h('div', { class: 'fact' }, h('small', {}, '今夜のメダル'), h('b', { class: 'num' }, `${night.dropsTotal}枚`)));
-    const o = night.boss || night.omen;
-    const omen = o ? h('div', { class: `omen-box ${night.boss ? 'boss' : night.omen.good ? 'good' : 'bad'}` }, h('b', {}, night.boss ? `ボス ・ ${o.name}` : o.name), o.desc) : null;
+    const omen = night.omen ? h('div', { class: `omen-box ${night.omen.good ? 'good' : 'bad'}` }, h('b', {}, night.omen.name), night.omen.desc) : null;
+    const curse = night.curse ? h('div', { class: 'omen-box bad' }, h('b', {}, `月蝕の凶兆 ・ ${night.curse.name}`), night.curse.desc) : null;
+    let boss = null;
+    if (night.boss) {
+      const E = ENEMIES[night.boss.enemy];
+      boss = h('div', { class: 'omen-box boss' },
+        h('b', {}, `ボス ・ ${night.boss.name}`), night.boss.desc,
+        h('div', { class: 'boss-card' },
+          h('div', { class: 'boss-title' }, h('strong', {}, E.name), h('span', { class: 'num' }, `体力 ${night.bossHp ?? E.hp}`)),
+          h('p', {}, h('em', {}, '妨害 '), E.curse),
+          h('p', {}, h('em', {}, '退治 '), E.reward),
+          h('p', { class: 'muted' }, '着地点の上に浮かぶボスに狙いを合わせて、メダルを当てて体力を削ろう (金メダルは3、大判は8ダメージ)。')));
+    }
     const moon = h('span', { class: 'moon-big', html: moonSvg(night.moonPhase, 84) });
     const card = h('div', { class: 'card night-intro' },
       moon,
-      h('p', { class: 'eyebrow' }, `第${night.index + 1}夜 ・ ${night.reading}`),
+      h('p', { class: 'eyebrow' }, `第${night.index + 1}夜 ・ ${night.reading}${night.eclipse ? ` ・ ${ECLIPSES[night.eclipse].name}` : ''}`),
       h('h2', {}, night.name),
       facts,
       h('p', { class: 'muted' }, '今夜のメダルをピッチャーで撃ち込む。手前から落ちてお賽銭箱に入ったメダルだけが払い出し。今夜の収支がノルマに届けば、夜明けにその枚数を月へ上納して次の夜へ。'),
+      boss,
       omen,
+      curse,
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => { this.hideAll(); onGo(); } }, '夜をはじめる')));
     this._show('intro', card);
   }
@@ -431,13 +486,41 @@ export class UI {
             : h('button', { class: 'btn gold', disabled: !can, onclick: () => this.on.buy(it, type) }, `${it.price}枚で買う`),
           reason ? h('span', { class: 'reason' }, reason) : null));
     };
-    const owned = h('div', { class: 'owned' },
+    // What the player already has, with each effect spelled out.
+    const owned = h('div', { class: 'owned-list' },
       ...game.charms.map((id, i) => {
         const c = charmById[id];
-        return h('div', { class: 'owned-item' }, this._seal(c), h('span', {}, c.name),
+        return h('div', { class: 'owned-row' },
+          h('span', { class: `seal r${c.rarity}`, 'aria-hidden': 'true' }, c.seal),
+          h('div', {}, h('b', {}, c.name, h('span', { class: 'rar' }, RARITY_NAME[c.rarity])), h('p', {}, c.desc)),
           h('button', { class: 'btn', onclick: () => this.on.sell(i) }, `売る +${Math.floor(c.price / 2)}`));
+      }),
+      ...game.talismans.map((id) => {
+        const t = talismanById[id];
+        return h('div', { class: 'owned-row' },
+          h('span', { class: 'ofuda', 'aria-hidden': 'true' }, t.seal),
+          h('div', {}, h('b', {}, t.name, h('span', { class: 'rar' }, 'お札')), h('p', {}, t.desc)));
       }));
-    if (!game.charms.length) owned.append(h('span', { class: 'muted' }, 'まだお守りはありません。'));
+    if (!game.charms.length && !game.talismans.length) owned.append(h('span', { class: 'muted' }, 'まだ何も持っていない。'));
+    const st = game.stats;
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    const statRows = [
+      ['連射間隔', `${st.fireInterval.toFixed(2)}秒`],
+      ['振り向き', `${st.turnSpeed.toFixed(1)}/秒`],
+      ['お賽銭箱の幅', st.boxWidth.toFixed(1)],
+      ['お賽銭箱の速さ', st.boxSpeed.toFixed(1)],
+      ['金メダル率', pct(st.goldChance)],
+      st.obanChance ? ['大判率', pct(st.obanChance)] : null,
+      ['金メダルの価値', `${st.goldValue}枚`],
+      ['今夜のメダル', `${st.dropsPerNight}枚`],
+      ['保留の上限', `${st.stockMax}`],
+      ['フィーバー', `${st.feverSpins}回転`],
+      st.cashback ? ['お賽銭返し', pct(st.cashback)] : null,
+      st.twinChance ? ['双子発射', pct(st.twinChance)] : null,
+      st.sideGuards ? ['側壁', '手前まで'] : null,
+    ].filter(Boolean);
+    const stats = h('div', { class: 'stat-grid' },
+      ...statRows.map(([k, v]) => h('div', {}, h('span', {}, k), h('b', { class: 'num' }, v))));
     const next = NIGHTS[game.nightIndex + 1];
     const card = h('div', { class: 'card wide' },
       h('div', { class: 'shop-head' },
@@ -447,8 +530,9 @@ export class UI {
       h('div', { class: 'shelf' }, ...shop.charms.map((it) => item(it, 'charm'))),
       h('div', { class: 'shelf-label' }, `お札 (${game.talismans.length}/${game.stats.talismanSlots}) ・ 夜の間に一度だけ使える`),
       h('div', { class: 'shelf' }, ...shop.talismans.map((it) => item(it, 'talisman'))),
-      h('div', { class: 'shelf-label' }, '手持ちのお守り'),
+      h('div', { class: 'shelf-label' }, `手持ち (お守り ${game.charms.length}/${game.stats.maxCharms} ・ お札 ${game.talismans.length}/${game.stats.talismanSlots})`),
       owned,
+      h('details', { class: 'stat-details' }, h('summary', {}, 'いまの能力 (月の社とお守りの効果込み)'), stats),
       h('p', { class: 'muted', style: 'margin-top:14px' }, `持ちメダルは、今夜のメダルが尽きた後の追加投入 (${EXTRA_DROPS}回まで) にも使える。`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn', disabled: game.bank < game.rerollCost(), onclick: () => this.on.reroll() }, game.rerollCost() === 0 ? '品替え (無料)' : `品替え (${game.rerollCost()}枚)`),
@@ -466,7 +550,9 @@ export class UI {
         h('div', {}, h('span', {}, '越えた夜'), h('span', { class: 'num' }, `${n.index}夜`)),
         h('div', {}, h('span', {}, 'ラン中の払い出し'), h('span', { class: 'num' }, `${game.run.paid}枚`)),
         h('div', {}, h('span', {}, '投入したメダル'), h('span', { class: 'num' }, `${game.run.dropped}枚`)),
-        h('div', {}, h('span', {}, 'ジャックポット'), h('span', { class: 'num' }, `${game.run.jackpots}回`))),
+        h('div', {}, h('span', {}, 'ジャックポット'), h('span', { class: 'num' }, `${game.run.jackpots}回`)),
+        h('div', {}, h('span', {}, 'ボス退治'), h('span', { class: 'num' }, `${game.run.bossKills || 0}体`)),
+        game.eclipse ? h('div', {}, h('span', {}, '難易度'), h('span', {}, ECLIPSES[game.eclipse].name)) : null),
       h('p', { class: 'shard-line' }, `月の欠片 +${shards}`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn primary', onclick: onRetry }, 'もう一度'),
@@ -485,7 +571,9 @@ export class UI {
         h('div', {}, h('span', {}, 'ラン中の払い出し'), h('span', { class: 'num' }, `${game.run.paid}枚`)),
         h('div', {}, h('span', {}, '投入したメダル'), h('span', { class: 'num' }, `${game.run.dropped}枚`)),
         h('div', {}, h('span', {}, 'ジャックポット'), h('span', { class: 'num' }, `${game.run.jackpots}回`)),
-        h('div', {}, h('span', {}, '最後の持ちメダル'), h('span', { class: 'num' }, `${game.bank}枚`))),
+        h('div', {}, h('span', {}, 'ボス退治'), h('span', { class: 'num' }, `${game.run.bossKills || 0}体`)),
+        h('div', {}, h('span', {}, '最後の持ちメダル'), h('span', { class: 'num' }, `${game.bank}枚`)),
+        h('div', {}, h('span', {}, '難易度'), h('span', {}, ECLIPSES[game.eclipse || 0].name))),
       h('p', { class: 'shard-line' }, `月の欠片 +${shards}`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn primary', onclick: onRetry }, 'もう一度'),
@@ -501,11 +589,13 @@ export class UI {
       h('ol', { class: 'howto' },
         h('li', {}, '左右のピッチャーが狙いの位置 (金の輪) へ交互にメダルを撃つ。マウスやドラッグで狙いを左右に動かし、クリック/タップで発射、長押しで連射。', h('kbd', {}, '←'), h('kbd', {}, '→'), ' と ', h('kbd', {}, 'Space'), ' でも操作できる。スマホでは下の狙いバーと発射ボタンが使える。'),
         h('li', {}, 'メダルは揺れる釘を抜けてプッシャーへ。手前の縁から落ちて、下を動くお賽銭箱に入ったメダルだけが払い出し。箱を外すと没収。'),
-        h('li', {}, 'ゆっくり動く鳥居をくぐると液晶スロットの保留。保留ランプの色 (青・緑・赤・金・虹) が当たりの予感。7揃いでジャックポット、月揃いで月玉とフィーバー。'),
+        h('li', {}, 'ゆっくり動く鳥居をくぐると液晶スロットの保留。鳥居の前では鈴が大きく揺れていて、当たるとメダルが弾かれる。鈴が外れた瞬間を狙おう。保留ランプの色 (青・緑・赤・金・虹) が当たりの予感。7揃いでジャックポット、月揃いで月玉とフィーバー。'),
+        h('li', {}, 'ボスの夜 (第4夜・第8夜) には着地点の上にボスが浮かぶ。狙いを合わせてメダルを当て、体力を削り切れば退治。生きている間は横取りや天狗風などで邪魔をしてくる。'),
         h('li', {}, '各夜には「今夜のメダル」と上納ノルマがある。今夜の収支 (払い出し − 追加投入) がノルマに届けば、夜明けにノルマ分を上納して次の夜へ。届かなければランは終わり。'),
         h('li', {}, `今夜のメダルを使い切ったら、持ちメダルから${EXTRA_DROPS}回まで追加投入できる。追加投入した枚数は今夜の収支から引かれる。最後の投入から数秒たつと夜が明ける。`),
         h('li', {}, '夜明けの後は夜店。上納の残りの持ちメダルで買い物をする。お守りは盤面をずっと変え、お札は夜の間に一度だけ使える (', h('kbd', {}, '1'), '〜', h('kbd', {}, '3'), ')。'),
-        h('li', {}, 'ランが終わると、進んだ夜の数に応じて月の欠片がもらえる。タイトルの「月の社」で、ピッチャーやお賽銭箱をずっと強化できる。'),
+        h('li', {}, 'ランが終わると、進んだ夜の数とボス退治に応じて月の欠片がもらえる。タイトルの「月の社」で、ピッチャーやお賽銭箱をずっと強化できる。'),
+        h('li', {}, '満月を越えると、より難しい「月蝕」の難易度が順に解放される。ノルマや値段が上がり、ボスが増えるが、月の欠片も多くもらえる。'),
         h('li', {}, h('kbd', {}, 'V'), ' で視点切替、', h('kbd', {}, 'M'), ' で消音、', h('kbd', {}, 'Esc'), ' でメニュー。')),
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: onBack }, 'もどる')));
     this._show('help', card);

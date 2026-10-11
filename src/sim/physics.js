@@ -2,9 +2,9 @@
 // (tools/sim-test.mjs drives it headlessly for tuning).
 import {
   COIN, GOLD_COIN, OBAN, BALL, WORLD, PUSHER, MAT, STAGE, BOX, HALF_W,
-  PIN_MOTION, TORII_MOTION, stagePoint, stagePins,
+  PIN_MOTION, TORII_MOTION, BELL, BOSS, stagePoint, stagePins,
 } from './config.js';
-import { buildMachineParts, checkerPostPos, quatX } from './machine.js';
+import { buildMachineParts, checkerPostPos, quatX, CHECKER_POST_S } from './machine.js';
 
 export const KIND = { SILVER: 0, GOLD: 1, BALL: 2, OBAN: 3 };
 
@@ -55,12 +55,22 @@ export class PhysicsWorld {
     this.boxX = 0;
     this.boxTargetX = 0;
     this.boxWidth = BOX.baseWidth;
+    this.bellX = 0;
+    this.bellSpeed = 1;
+    this.bellRadius = BELL.radius;
+    this.bossX = 0;
+    this.bossOn = false;
     this._moverT = 0;
+    // Medals touching a hit target this step: [target name, medal slot, ...].
+    this.hits = [];
+    this.hitTargets = new Map(); // collider handle -> target name
 
     this._buildStatic();
     this._buildPusher();
     this._buildPins();
     this._buildTorii();
+    this._buildBell();
+    this._buildBoss();
     this._buildBox();
   }
 
@@ -134,6 +144,63 @@ export class PhysicsWorld {
     });
   }
 
+  // Collider on a kinematic body whose contacts with medals are reported in
+  // `hits` (collision events are enabled on it even when sound is off).
+  _hitCollider(desc, body, name, mat) {
+    desc.setActiveEvents(this.R.ActiveEvents.COLLISION_EVENTS);
+    const c = this.world.createCollider(desc, body);
+    this.colliderMat.set(c.handle, mat);
+    this.hitTargets.set(c.handle, name);
+    return c;
+  }
+
+  _bellPos() {
+    const w = stagePoint(this.bellX, CHECKER_POST_S + BELL.ds, 0);
+    return { x: w.x, y: w.y + BELL.lift, z: w.z };
+  }
+
+  _buildBell() {
+    const R = this.R;
+    if (!this.bell) this.bell = this._kinematic(this.bellX, 0, 0);
+    if (this.bellCollider) {
+      this.hitTargets.delete(this.bellCollider.handle);
+      this.world.removeCollider(this.bellCollider, false);
+    }
+    this.bellCollider = this._hitCollider(
+      R.ColliderDesc.ball(this.bellRadius).setFriction(0.1).setRestitution(0.55), this.bell, 'bell', MAT.BELL);
+    this.bell.setTranslation(this._bellPos(), true);
+  }
+
+  setBell(radius, speed) {
+    this.bellSpeed = speed;
+    if (Math.abs(radius - this.bellRadius) < 1e-3) return;
+    this.bellRadius = radius;
+    this._buildBell();
+  }
+
+  bossPos(x = this.bossX) {
+    return stagePoint(x, BOSS.s, BOSS.lift);
+  }
+
+  _buildBoss() {
+    const R = this.R;
+    this.boss = this._kinematic(0, -20, 0);
+    this.bossCollider = this._hitCollider(
+      R.ColliderDesc.ball(BOSS.radius).setFriction(0.2).setRestitution(0.45), this.boss, 'boss', MAT.BOSS);
+    this.bossCollider.setEnabled(false);
+  }
+
+  // Show or hide the boss; the game moves it with setBossX.
+  setBoss(on) {
+    this.bossOn = on;
+    this.bossCollider.setEnabled(on);
+    this.boss.setTranslation(on ? this.bossPos() : { x: 0, y: -20, z: 0 }, true);
+  }
+
+  setBossX(x) {
+    this.bossX = x;
+  }
+
   // The offering box is an open-top kinematic box; rebuilt when resized.
   _buildBox() {
     const R = this.R;
@@ -188,6 +255,10 @@ export class PhysicsWorld {
     }
     this.box.setNextKinematicTranslation({ x: this.boxTargetX, y: BOX.floorY, z: BOX.z });
     this.boxX = this.boxTargetX;
+    // The bell swings like a pendulum hung from the torii's top beam.
+    this.bellX = this.toriiX + BELL.amp * Math.sin(2 * Math.PI * t * this.bellSpeed / BELL.period);
+    this.bell.setNextKinematicTranslation(this._bellPos());
+    if (this.bossOn) this.boss.setNextKinematicTranslation(this.bossPos());
   }
 
   // --- machine tweaks used by charms ---------------------------------------
@@ -307,8 +378,7 @@ export class PhysicsWorld {
     this.time += dt;
     this.pusherFront = front;
     this._readBack(dt);
-    if (this.onImpact) this._drainImpacts();
-    else this.events.clear();
+    this._drainEvents();
     if (t0) this.lastStepMs = performance.now() - t0;
   }
 
@@ -338,12 +408,19 @@ export class PhysicsWorld {
     }
   }
 
-  _drainImpacts() {
+  _drainEvents() {
     const dv = this.impactSpeed;
+    this.hits.length = 0;
     this.events.drainCollisionEvents((h1, h2, started) => {
       if (!started) return;
       const s1 = this.colliderSlot.get(h1);
       const s2 = this.colliderSlot.get(h2);
+      const target = this.hitTargets.get(h1) || this.hitTargets.get(h2);
+      if (target) {
+        const slot = s1 !== undefined ? s1 : s2;
+        if (slot !== undefined) this.hits.push(target, slot);
+      }
+      if (!this.onImpact) return;
       const sp1 = s1 !== undefined ? dv[s1] : 0;
       const sp2 = s2 !== undefined ? dv[s2] : 0;
       const speed = Math.max(sp1, sp2);

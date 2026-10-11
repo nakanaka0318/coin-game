@@ -41,6 +41,9 @@ export function step(world, game) {
 export function aimFor(game, strategy) {
   const r = game.rng;
   if (strategy === 'spread') return r.range(AIM.minX, AIM.maxX);
+  // A careful player shoots the boss down first, leading its movement.
+  const b = game.boss;
+  if (strategy === 'track' && b?.alive) return b.x + b.vx * 0.55 + r.range(-0.35, 0.35);
   if (strategy === 'mid') return r.range(-2, 2);
   const w = game.world;
   const lead = 1.0;

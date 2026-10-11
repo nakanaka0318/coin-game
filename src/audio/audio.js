@@ -233,7 +233,10 @@ export class AudioEngine {
     const pan = x / 8;
     const coin = (m) => m === MAT.COIN || m === MAT.GOLD;
     const other = coin(m1) ? m2 : m1;
-    if (m1 === MAT.BALL || m2 === MAT.BALL) {
+    if (other === MAT.BOSS) return; // boss hits have their own sound
+    if (other === MAT.BELL) {
+      this._play(this.rin, { gain: 0.1 + loud * 0.3, rate: 2.1 + Math.random() * 0.25, pan });
+    } else if (m1 === MAT.BALL || m2 === MAT.BALL) {
       this._play(this.knock, { gain: 0.5 * loud + 0.1, rate: 0.6, pan });
     } else if (coin(m1) && coin(m2)) {
       const b = this.clinks[(Math.random() * this.clinks.length) | 0];
@@ -400,6 +403,27 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
     src.disconnect();
     src.connect(f).connect(g).connect(this.sfx);
+  }
+
+  bossSpawn() {
+    for (let i = 0; i < 4; i++) this._play(this.taiko, { gain: 0.7, rate: 0.62 + i * 0.04, when: i * 0.32 });
+    [3, 2, 0].forEach((st, i) => this.pluck(st, { gain: 0.4, when: 1.2 + i * 0.18 }));
+  }
+
+  bossHit(dmg, x) {
+    this._play(this.taiko, { gain: 0.35 + Math.min(0.4, dmg * 0.06), rate: 1.5 + Math.random() * 0.2, pan: x / 8 });
+    this._play(this.knock, { gain: 0.25, rate: 0.8, pan: x / 8 });
+  }
+
+  bossDefeated() {
+    for (let i = 0; i < 5; i++) this._play(this.taiko, { gain: 0.7, rate: 1.2 - i * 0.1, when: i * 0.12 });
+    [12, 14, 15, 17, 19, 22].forEach((st, i) => this.pluck(st, { gain: 0.45, when: 0.5 + i * 0.07 }));
+    this._play(this.rin, { gain: 0.5, rate: 1.26, when: 0.9 });
+  }
+
+  stolen(x) {
+    this._tone(180, 0.3, { type: 'triangle', gain: 0.12, slide: 0.6, pan: x / 8 });
+    this._play(this.knock, { gain: 0.3, rate: 0.6, pan: x / 8 });
   }
 
   nightStart(index) {

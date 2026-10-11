@@ -422,3 +422,145 @@ export function makeWoodTexture(w = 256, h = 256) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
+
+// Boss faces, drawn as masks on a transparent 256px canvas.
+export function makeBossFace(key) {
+  const S = 256;
+  const c = makeCanvas(S, S);
+  const ctx = c.getContext('2d');
+  const ink = '#140c10';
+  const blob = (x, y, rx, ry, fill, stroke = ink, lw = 5) => {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) { ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
+  };
+  const poly = (pts, fill, stroke = ink, lw = 4) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) { ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
+  };
+  const eye = (x, y, dir, iris = '#ffd23a') => {
+    blob(x, y, 17, 13, iris, ink, 4);
+    blob(x + dir * 3, y + 1, 6, 8, ink, null);
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = ink;
+    ctx.beginPath();
+    ctx.moveTo(x - dir * 24, y - 26);
+    ctx.lineTo(x + dir * 18, y - 12);
+    ctx.stroke();
+  };
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (key === 'oni') {
+    // Wild hair behind the head.
+    const hair = [];
+    for (let i = 0; i <= 14; i++) {
+      const a = Math.PI * (1.05 + i / 14 * 0.9);
+      const r = i % 2 ? 108 : 86;
+      hair.push([128 + Math.cos(a) * r, 128 + Math.sin(a) * r * 0.95]);
+    }
+    hair.push([214, 150], [42, 150]);
+    poly(hair, '#1d1418', ink, 3);
+    const g = ctx.createRadialGradient(110, 120, 20, 128, 140, 110);
+    g.addColorStop(0, '#f2603f');
+    g.addColorStop(1, '#a3241a');
+    blob(128, 146, 84, 92, g);
+    poly([[78, 74], [58, 8], [102, 66]], '#f4e7c4');
+    poly([[178, 74], [198, 8], [154, 66]], '#f4e7c4');
+    eye(98, 128, 1);
+    eye(158, 128, -1);
+    poly([[118, 150], [138, 150], [146, 176], [110, 176]], '#c23a24', ink, 4);
+    // Grinning mouth with fangs.
+    ctx.beginPath();
+    ctx.moveTo(78, 192);
+    ctx.quadraticCurveTo(128, 236, 178, 192);
+    ctx.quadraticCurveTo(128, 210, 78, 192);
+    ctx.fillStyle = '#3a0c0c';
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+    poly([[92, 200], [100, 176], [108, 204]], '#fffaf0', ink, 3);
+    poly([[164, 200], [156, 176], [148, 204]], '#fffaf0', ink, 3);
+  } else if (key === 'tengu') {
+    // Black feathered wings.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 5; i++) {
+        const a = -0.9 + i * 0.32;
+        const bx = 128 + side * 70, by = 120;
+        poly([[bx, by], [bx + side * Math.cos(a) * 118, by + Math.sin(a) * 118 - 10],
+          [bx + side * Math.cos(a + 0.22) * 100, by + Math.sin(a + 0.22) * 100]], i % 2 ? '#24202c' : '#36303e', ink, 3);
+      }
+    }
+    const g = ctx.createRadialGradient(112, 110, 20, 128, 130, 100);
+    g.addColorStop(0, '#e2483a');
+    g.addColorStop(1, '#8e1c16');
+    blob(128, 136, 72, 84, g);
+    // Tokin cap.
+    poly([[106, 54], [150, 54], [160, 34], [128, 18], [96, 34]], '#17131b', ink, 4);
+    // White brows and beard.
+    for (const side of [-1, 1]) {
+      poly([[128 + side * 14, 104], [128 + side * 66, 86], [128 + side * 58, 112]], '#f6f1e6', ink, 3);
+    }
+    eye(100, 122, 1, '#ffe27a');
+    eye(156, 122, -1, '#ffe27a');
+    poly([[70, 182], [128, 246], [186, 182], [160, 196], [128, 212], [96, 196]], '#f6f1e6', ink, 3);
+    // Long nose, pointing out at the viewer.
+    const ng = ctx.createLinearGradient(128, 130, 128, 214);
+    ng.addColorStop(0, '#d23b2e');
+    ng.addColorStop(1, '#ff7a5e');
+    ctx.beginPath();
+    ctx.moveTo(114, 134);
+    ctx.quadraticCurveTo(110, 200, 128, 222);
+    ctx.quadraticCurveTo(146, 200, 142, 134);
+    ctx.closePath();
+    ctx.fillStyle = ng;
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+  } else {
+    // Tanuki with a leaf on its head.
+    blob(66, 70, 26, 26, '#7a4a26');
+    blob(190, 70, 26, 26, '#7a4a26');
+    blob(66, 72, 13, 13, '#3a2214', null);
+    blob(190, 72, 13, 13, '#3a2214', null);
+    const g = ctx.createRadialGradient(118, 120, 20, 128, 140, 110);
+    g.addColorStop(0, '#b07a46');
+    g.addColorStop(1, '#6e4222');
+    blob(128, 142, 92, 84, g);
+    blob(128, 178, 50, 38, '#f1e2c4');
+    poly([[56, 120], [104, 106], [112, 150], [70, 156]], '#2a1a12', null);
+    poly([[200, 120], [152, 106], [144, 150], [186, 156]], '#2a1a12', null);
+    blob(92, 132, 11, 12, '#fff8e6', null);
+    blob(164, 132, 11, 12, '#fff8e6', null);
+    blob(94, 134, 5, 6, ink, null);
+    blob(162, 134, 5, 6, ink, null);
+    blob(128, 164, 13, 9, ink, null);
+    ctx.beginPath();
+    ctx.moveTo(110, 186);
+    ctx.quadraticCurveTo(128, 200, 146, 186);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+    // Leaf.
+    ctx.save();
+    ctx.translate(128, 52);
+    ctx.rotate(-0.4);
+    blob(0, 0, 18, 34, '#58b04a', ink, 4);
+    ctx.beginPath();
+    ctx.moveTo(0, -30);
+    ctx.lineTo(0, 34);
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

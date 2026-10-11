@@ -6,7 +6,7 @@ import { PhysicsWorld, KIND } from './sim/physics.js';
 import { WORLD, FRONT_Z, HALF_W, STAGE, BOX, AIM, LANDING, stagePoint } from './sim/config.js';
 import initialField from './sim/initial-field.json';
 import { Game, charmById, talismanById, shrineById } from './game/game.js';
-import { NIGHTS, shrinePrice } from './game/data.js';
+import { NIGHTS, shrinePrice, ECLIPSES, ECLIPSE_MAX } from './game/data.js';
 import { SceneView } from './render/scene.js';
 import { Cabinet } from './render/cabinet.js';
 import { CoinRenderer } from './render/coins.js';
@@ -34,7 +34,7 @@ const settings = Object.assign({ sound: true, quality: isTouch ? 'medium' : 'hig
 settings.vol = Object.assign({ master: 80, sfx: 80, bgm: 50 }, settings.vol);
 if (settings.music === false) settings.vol.bgm = 0;
 delete settings.music;
-const record = Object.assign({ best: 0, clears: 0, bestJp: 0, shards: 0, earned: 0 }, store.record);
+const record = Object.assign({ best: 0, clears: 0, bestJp: 0, shards: 0, earned: 0, eclipseMax: 0, bossKills: 0 }, store.record);
 const meta = Object.assign({}, store.meta);
 
 const loading = document.getElementById('loading');
@@ -90,6 +90,7 @@ game.meta = meta;
 // --- UI ----------------------------------------------------------------------
 const ui = new UI(document.getElementById('ui'), {
   newRun: () => startRun(),
+  setEclipse: (lv) => { settings.eclipse = lv; persist(); },
   continueRun: () => continueSaved(),
   freePlay: () => startFree(),
   backToTitle: () => showTitle(),
@@ -140,7 +141,7 @@ function showTitle() {
   game.mode = 'idle';
   game.phase = 'idle';
   const saved = loadStore().save;
-  ui.showTitle({ hasSave: !!saved, record, settings });
+  ui.showTitle({ hasSave: !!saved, record, settings, eclipses: ECLIPSES });
   view.setView('overview');
 }
 
@@ -166,7 +167,7 @@ function startRun() {
   ui.hideAll();
   impactsOn = false;
   game.meta = meta;
-  game.newRun();
+  game.newRun(undefined, Math.min(settings.eclipse || 0, record.eclipseMax || 0));
   impactsOn = true;
   persist();
 }
@@ -382,10 +383,51 @@ function onGameEvent(type, d) {
       record.clears += 1;
       record.best = NIGHTS.length;
       audio.jackpot();
+      // Clearing the highest unlocked eclipse level opens the next one.
+      if (d.eclipse >= (record.eclipseMax || 0) && d.eclipse < ECLIPSE_MAX) {
+        record.eclipseMax = d.eclipse + 1;
+        settings.eclipse = record.eclipseMax;
+        setTimeout(() => ui.toast(`${ECLIPSES[record.eclipseMax].name} が解放された`, 'big'), 1200);
+      }
       endRun(d.shards);
       ui.showClear(game, d.shards, () => startRun(), () => { game.bank = Math.max(game.bank, 50); startFree(); }, () => showTitle(), () => openShrine());
       break;
     }
+    case 'bossSpawn': audio.bossSpawn(); break;
+    case 'bossHit': {
+      cabinet.bossHit();
+      audio.bossHit(d.dmg, d.x);
+      const p = screenOf(d.x, d.y + 0.9, d.z);
+      ui.pop(`−${d.dmg}`, p.x + (Math.random() - 0.5) * 24, p.y, 'hit');
+      sparkles.burst(d.x, d.y, d.z, { count: 10 + d.dmg * 3, color: 0xff8a5a, speed: 3, up: 2 });
+      break;
+    }
+    case 'bossDefeated': {
+      cabinet.bossDefeated();
+      audio.bossDefeated();
+      view.addShake(0.7);
+      cabinet.flash('#ffd34a', 2.5);
+      record.bossKills = (record.bossKills || 0) + 1;
+      for (let i = 0; i < 4; i++) setTimeout(() => sparkles.burst(d.x + (Math.random() - 0.5) * 2, d.y + Math.random(), d.z, { count: 50, color: [0xffd34a, 0xff6b4a, 0xffffff][i % 3], speed: 5, up: 4, life: 1.2, size: 0.5 }), i * 180);
+      const extra = d.key === 'oni' && d.stolen ? `横取りされた${d.stolen}枚が倍になって戻る` : `月の欠片 +${d.shards}`;
+      lcd.message(`${d.name} 退治!!`, { sub: extra, color: '#ffd34a', seconds: 2.6, big: true });
+      ui.toast(`${d.name}を退治した! 月の欠片 +${d.shards}`, 'big');
+      break;
+    }
+    case 'stolen': {
+      const p = screenOf(world.boxX, BOX.floorY + BOX.height + 0.4, BOX.z);
+      ui.pop(`鬼 −${d.value}`, p.x, p.y, 'lost');
+      audio.stolen(world.boxX);
+      break;
+    }
+    case 'tenguWind':
+      audio.gust();
+      view.addShake(0.35);
+      ui.toast('天狗風! メダルが横へ吹き飛ぶ', 'bad');
+      sparkles.burst(-4, 0.8, 1.5, { count: 40, color: 0xdff3ff, speed: 5, up: 1 });
+      sparkles.burst(4, 0.8, 1.5, { count: 40, color: 0xdff3ff, speed: 5, up: 1 });
+      break;
+    case 'bossEscape': ui.toast(`${d.name}は夜明けと共に去っていった`); break;
     case 'quake': view.addShake(0.9 * Math.min(1.5, d.power)); audio.quake(); break;
     case 'gust': audio.gust(); sparkles.burst(0, 0.6, FRONT_Z - 1.2, { count: 40, color: 0xbfe8ff, speed: 4, up: 1.5 }); break;
     case 'talisman': ui.toast(`${talismanById[d.id].name}!`); break;
@@ -515,6 +557,7 @@ function frame() {
   coins.update(world);
   cabinet.updateAim(game, canPlay() && game.canFire());
   cabinet.update(dt, world.pusherFront, cabinet.flashKind === 'jackpot' && cabinet.flashTimer > 0, game.fever > 0);
+  cabinet.updateBoss(dt, game.boss);
   sparkles.setScale(view.renderer.domElement.height * 0.9);
   sparkles.update(dt);
   lcd.draw(dt, game);

@@ -1,6 +1,6 @@
 // Run content: nights, omens, charms (お守り), talismans (お札), slot tables,
 // and the moon shrine (月の社) upgrades that persist between runs.
-import { BOX, STAGE } from '../sim/config.js';
+import { BOX, STAGE, BELL } from '../sim/config.js';
 
 export const BASE_STATS = {
   dropsPerNight: 30,
@@ -43,6 +43,11 @@ export const BASE_STATS = {
   shopCharms: 3,
   rerollBase: 2,
   freeRerolls: 0,
+  bellRadius: BELL.radius,
+  bellSpeed: 1,
+  quotaMult: 1, // eclipse levels raise the quotas
+  shopPrice: 1,
+  bossHp: 1,
 };
 
 // Once the night's medals are gone, up to EXTRA_DROPS more can be shot
@@ -62,18 +67,67 @@ export const NIGHTS = [
   { name: '満月', reading: 'まんげつ', phase: 1.0, quota: 75, boss: 'fullmoon' },
 ];
 
+// Boss nights. Each brings an enemy (ENEMIES) that hovers over the landing
+// strip; medals lobbed into it chip away its health.
 export const BOSSES = {
   oni: {
     name: '鬼の刻',
-    desc: '側壁が短くなり、横からこぼれやすい夜。',
+    desc: '赤鬼が現れる夜。側壁も短くなり、横からこぼれやすい。',
+    enemy: 'oni',
     apply: (s) => { s.shortWalls = true; },
+  },
+  tanuki: {
+    name: '化かしの夜',
+    desc: '化け狸が現れる夜。',
+    enemy: 'tanuki',
+    apply: () => {},
   },
   fullmoon: {
     name: '満月の宴',
-    desc: 'ジャックポット確率2倍。最後のノルマを越えろ。',
+    desc: '大天狗が現れる最後の夜。ジャックポット確率2倍。',
+    enemy: 'tengu',
     apply: (s) => { s.jpLuck *= 2; },
   },
 };
+
+// Damage a medal deals to a boss, by kind (silver, gold, ball, oban).
+export const BOSS_DAMAGE = [1, 3, 6, 8];
+
+export const ENEMIES = {
+  oni: {
+    name: '赤鬼', hp: 24, speed: 1.6, wait: [0.8, 1.8], shards: 4,
+    curse: 'お賽銭箱に入ったメダルを3枚に1枚横取りする。',
+    reward: 'メダル10枚と、横取りした分の倍を返す。金メダル2枚も落とす。',
+  },
+  tanuki: {
+    name: '化け狸', hp: 30, speed: 2.8, wait: [0.3, 0.9], shards: 5,
+    curse: 'お賽銭箱を化かして動きを鈍らせる (×0.55)。',
+    reward: 'メダル15枚の雨と金メダル3枚。',
+  },
+  tengu: {
+    name: '大天狗', hp: 40, speed: 4.4, wait: [0.5, 1.3], shards: 8,
+    curse: '9秒ごとに天狗風を起こし、台のメダルを横へ吹き飛ばす。',
+    reward: 'メダル25枚の雨とフィーバー。',
+  },
+};
+
+// 月蝕 (eclipse) levels: optional hard modes. Each level adds its rule to
+// those below it; clearing a level unlocks the next.
+export const ECLIPSES = [
+  { name: '並', rule: 'ふつうの月夜。' },
+  { name: '月蝕 一', rule: 'ノルマ +15%。', apply: (s) => { s.quotaMult *= 1.15; } },
+  { name: '月蝕 二', rule: '夜店の値段 +30%、品替え +1枚。', apply: (s) => { s.shopPrice *= 1.3; s.rerollBase += 1; } },
+  { name: '月蝕 三', rule: '第6夜に化け狸が現れ、ボスの体力 +50%。', apply: (s) => { s.bossHp *= 1.5; } },
+  { name: '月蝕 四', rule: '鳥居の鈴が大きく速くなり、今夜のメダル −3枚。', apply: (s) => { s.bellRadius += 0.08; s.bellSpeed *= 1.3; s.dropsPerNight -= 3; } },
+  { name: '月蝕 五', rule: '毎晩、悪い縁起がもうひとつ重なり、ノルマさらに +15%。', apply: (s) => { s.quotaMult *= 1.15; } },
+];
+export const ECLIPSE_MAX = ECLIPSES.length - 1;
+export const ECLIPSE_TANUKI = 3; // from this level, night 6 is a boss night
+export const ECLIPSE_CURSE = 5; // from this level, every night adds a bad omen
+
+export function eclipseShardMult(level) {
+  return 1 + 0.3 * level;
+}
 
 export const OMENS = [
   { id: 'tailwind', name: '追い風', good: true, desc: 'プッシャーが速く動く。', apply: (s) => { s.speed *= 1.25; } },

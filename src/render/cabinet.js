@@ -3,12 +3,13 @@
 // meshes match what the physics sees.
 import * as THREE from 'three';
 import {
-  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD,
+  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD, BOSS,
   stagePoint,
 } from '../sim/config.js';
-import { checkerPostPos, quatX } from '../sim/machine.js';
+import { checkerPostPos, quatX, CHECKER_POST_S } from '../sim/machine.js';
 import {
   PALETTE, makeSeigaiha, makeStageArt, makeMoon, makeLantern, makeCanvas, makeWoodTexture,
+  makeBossFace, makeGlowSprite,
 } from './textures.js';
 
 const lacquer = (color, extra = {}) => new THREE.MeshPhysicalMaterial({
@@ -63,6 +64,8 @@ export class Cabinet {
     this._buildPusher();
     this._buildPins();
     this._buildTorii();
+    this._buildBell();
+    this._buildBoss();
     this._buildBackboard(lcdTexture);
     this._buildLamps();
     this._buildBox();
@@ -431,6 +434,122 @@ export class Cabinet {
     this.toriiPostX = px;
   }
 
+  // 鈴 hanging from the torii on a red and white rope.
+  _buildBell() {
+    const g = this.bellGroup = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 18), this.mats.gold);
+    g.add(body);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.97, 0.08, 8, 36), this.mats.black);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = -0.3;
+    g.add(band);
+    const slot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 2.06), this.mats.black);
+    slot.position.y = -0.62;
+    g.add(slot);
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.08, 8, 16), this.mats.gold);
+    loop.position.y = 1.08;
+    g.add(loop);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.group.add(g);
+    this.bellRope = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1, 8),
+      new THREE.MeshStandardMaterial({ color: 0xd9452e, roughness: 0.75 }));
+    this.bellRope.castShadow = true;
+    this.group.add(this.bellRope);
+    const hang = stagePoint(0, CHECKER_POST_S, 0);
+    this.bellHang = { y: hang.y + 1.85, z: hang.z };
+    this._ropeDir = new THREE.Vector3();
+    this._up = new THREE.Vector3(0, 1, 0);
+  }
+
+  _updateBell() {
+    const w = this.world;
+    const p = w._bellPos();
+    const r = w.bellRadius;
+    this.bellGroup.scale.setScalar(r);
+    this.bellGroup.position.set(p.x, p.y, p.z);
+    const top = { x: w.toriiX, y: this.bellHang.y, z: this.bellHang.z };
+    const end = { x: p.x, y: p.y + r * 1.25, z: p.z };
+    const d = this._ropeDir.set(end.x - top.x, end.y - top.y, end.z - top.z);
+    const len = d.length();
+    this.bellRope.position.set((top.x + end.x) / 2, (top.y + end.y) / 2, (top.z + end.z) / 2);
+    this.bellRope.scale.y = len;
+    this.bellRope.quaternion.setFromUnitVectors(this._up, d.multiplyScalar(-1 / len));
+    this.bellGroup.rotation.z = Math.atan2(p.x - w.toriiX, top.y - p.y);
+  }
+
+  // Boss: a painted mask sprite with a glow behind it and a shadow on the stage.
+  _buildBoss() {
+    this.bossFaces = {};
+    this.bossSprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+    this.bossSprite.scale.set(2.4, 2.4, 1);
+    this.bossSprite.renderOrder = 2;
+    this.bossHalo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowSprite(), color: 0xff5a3c, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.bossHalo.scale.set(4.2, 4.2, 1);
+    this.bossShadow = new THREE.Mesh(new THREE.CircleGeometry(0.85, 28),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
+    this.bossShadow.rotation.x = STAGE.angle - Math.PI / 2;
+    for (const o of [this.bossSprite, this.bossHalo, this.bossShadow]) {
+      o.visible = false;
+      this.group.add(o);
+    }
+    this.bossKey = null;
+    this.bossFlash = 0;
+    this.bossDying = 0;
+  }
+
+  bossHit() {
+    this.bossFlash = 1;
+  }
+
+  bossDefeated() {
+    this.bossDying = 1;
+  }
+
+  updateBoss(dt, boss) {
+    const t = this.time;
+    const sp = this.bossSprite;
+    const alive = !!boss?.alive;
+    if (this.bossDying > 0) this.bossDying = Math.max(0, this.bossDying - dt * 1.3);
+    const show = alive || this.bossDying > 0;
+    sp.visible = this.bossHalo.visible = this.bossShadow.visible = show;
+    if (!show) return;
+    if (boss && boss.key !== this.bossKey) {
+      this.bossKey = boss.key;
+      this.bossFaces[boss.key] ||= makeBossFace(boss.key);
+      sp.material.map = this.bossFaces[boss.key];
+      sp.material.needsUpdate = true;
+      this.bossHalo.material.color.set(boss.key === 'tanuki' ? 0x9be070 : boss.key === 'tengu' ? 0xffd27a : 0xff5a3c);
+    }
+    const x = alive ? this.world.bossX : sp.position.x;
+    const p = stagePoint(x, BOSS.s, BOSS.lift);
+    const bob = Math.sin(t * 3) * 0.1;
+    sp.position.set(p.x, p.y + 0.1 + bob, p.z);
+    this.bossHalo.position.set(p.x, p.y + 0.1 + bob, p.z - 0.2);
+    const sh = stagePoint(x, BOSS.s, 0.03);
+    this.bossShadow.position.set(sh.x, sh.y, sh.z);
+    if (this.bossFlash > 0) this.bossFlash = Math.max(0, this.bossFlash - dt * 5);
+    const f = this.bossFlash;
+    sp.material.color.setRGB(1, 1 - f * 0.6, 1 - f * 0.6);
+    if (this.bossDying > 0) {
+      const k = 1 - this.bossDying;
+      sp.scale.setScalar(2.4 * (1 + k * 0.9));
+      sp.material.opacity = this.bossDying;
+      sp.material.rotation = k * 4;
+      this.bossHalo.material.opacity = 0.9 * this.bossDying;
+      this.bossShadow.material.opacity = 0.35 * this.bossDying;
+    } else {
+      const squash = 1 + f * 0.12;
+      sp.scale.set(2.4 * squash, 2.4 / squash, 1);
+      sp.material.opacity = 1;
+      sp.material.rotation = Math.sin(t * 2.1) * 0.07;
+      this.bossHalo.material.opacity = 0.35 + 0.15 * Math.sin(t * 4) + f * 0.4;
+      this.bossShadow.material.opacity = 0.35;
+    }
+  }
+
   setToriiHalfGap(halfGap) {
     const px = checkerPostPos(1, halfGap).x;
     const scale = px / this.toriiPostX;
@@ -520,6 +639,7 @@ export class Cabinet {
     this.pusher.position.set(0, PUSHER.height / 2, pusherFront - PUSHER.depth / 2);
     w.pins.forEach((p, i) => { this.pinMeshes[i].position.x = p.x; });
     this.torii.position.x = w.toriiX;
+    this._updateBell();
     if (Math.abs(this.boxBuiltWidth - w.boxWidth) > 1e-3) this._buildBox();
     this.boxGroup.position.x = w.boxX;
     if (this.boxFlash > 0) this.boxFlash = Math.max(0, this.boxFlash - dt * 3);

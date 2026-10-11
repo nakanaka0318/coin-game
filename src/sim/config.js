@@ -107,6 +107,13 @@ export const PIN_MOTION = [
   { amp: 0.95, period: 4.4, phase: 0.7 },
 ];
 export const TORII_MOTION = { amp: 2.4, period: 12 };
+// 鈴: a bell hanging at the torii swings across the opening and knocks medals
+// aside, so only well-timed medals get through.
+// It hangs just in front of the torii (ds along the slope) and swings wide
+// enough to clear the opening for part of each swing.
+export const BELL = { radius: 0.3, lift: 0.3, amp: 1.0, period: 2.0, ds: -0.5 };
+// Bosses hover over the landing strip, where lobbed medals can hit them.
+export const BOSS = { s: LANDING.s, lift: 1.3, radius: 0.72, amp: 4.4 };
 
 // 賽銭箱 (offering box) under the front edge. Only medals that land in it
 // are paid out; it slides along a rail to meet falling medals.
@@ -148,6 +155,8 @@ export const MAT = {
   BALL: 12,
   PUSHER: 13,
   BOX: 14,
+  BELL: 15,
+  BOSS: 16,
 };
 
 // Stage-local coordinates: s runs down the slope from the top (0) to the lip
