@@ -1,9 +1,9 @@
 // Instanced rendering of every dynamic body (medals and balls).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { COIN, GOLD_COIN, OBAN, BALL } from '../sim/config.js';
+import { COIN, GOLD_COIN, OBAN, BALL, DARUMA, CHEST } from '../sim/config.js';
 import { KIND } from '../sim/physics.js';
-import { makeCoinFace, makeReededEdge, makeRainbowStrip } from './textures.js';
+import { makeCoinFace, makeReededEdge, makeRainbowStrip, makeDarumaTexture, makeChestTexture } from './textures.js';
 
 function coinGeometry(radius, halfHeight, segments = 40) {
   const b = Math.min(0.03, halfHeight * 0.5);
@@ -70,7 +70,15 @@ export class CoinRenderer {
         color: 0xffe9a8, metalness: 0.2, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05,
         emissive: 0xd08a2a, emissiveIntensity: 0.35, iridescence: 0.4,
       }), 16);
-    this.all = [this.silver, this.gold, this.ball, this.oban];
+    this.daruma = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(DARUMA.radius, 32, 20),
+      new THREE.MeshPhysicalMaterial({ map: makeDarumaTexture(), roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.1 }), 12);
+    const side = new THREE.MeshStandardMaterial({ map: makeChestTexture(256, false), roughness: 0.4, metalness: 0.2 });
+    const front = new THREE.MeshStandardMaterial({ map: makeChestTexture(256, true), roughness: 0.4, metalness: 0.2 });
+    this.chest = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(CHEST.half[0] * 2, CHEST.half[1] * 2, CHEST.half[2] * 2),
+      [side, side, side, side, front, front], 12);
+    this.all = [this.silver, this.gold, this.ball, this.oban, this.daruma, this.chest];
     for (const m of this.all) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.castShadow = true;
@@ -79,7 +87,10 @@ export class CoinRenderer {
       m.count = 0;
       scene.add(m);
     }
-    this.meshes = { [KIND.SILVER]: this.silver, [KIND.GOLD]: this.gold, [KIND.BALL]: this.ball, [KIND.OBAN]: this.oban };
+    this.meshes = {
+      [KIND.SILVER]: this.silver, [KIND.GOLD]: this.gold, [KIND.BALL]: this.ball, [KIND.OBAN]: this.oban,
+      [KIND.DARUMA]: this.daruma, [KIND.CHEST]: this.chest,
+    };
   }
 
   setShadows(on) {
@@ -95,7 +106,7 @@ export class CoinRenderer {
       this.rainbowFace.rotation = t * 0.9;
       this.rainbowRim.offset.x = (t * 0.25) % 1;
     }
-    const counts = [0, 0, 0, 0];
+    const counts = this.all.map(() => 0);
     const arrays = this.all.map((m) => m.instanceMatrix.array);
     const caps = this.all.map((m) => m.instanceMatrix.count);
     const { pos, quat, kind } = world;

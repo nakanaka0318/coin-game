@@ -405,6 +405,14 @@ export class AudioEngine {
     src.connect(f).connect(g).connect(this.sfx);
   }
 
+  dice() {
+    for (let i = 0; i < 5; i++) this._play(this.knock, { gain: 0.25, rate: 1.4 + Math.random() * 0.5, when: i * 0.12 });
+  }
+
+  diceStep() {
+    this._play(this.knock, { gain: 0.14, rate: 2.4 });
+  }
+
   bossSpawn() {
     for (let i = 0; i < 4; i++) this._play(this.taiko, { gain: 0.7, rate: 0.62 + i * 0.04, when: i * 0.32 });
     [3, 2, 0].forEach((st, i) => this.pluck(st, { gain: 0.4, when: 1.2 + i * 0.18 }));

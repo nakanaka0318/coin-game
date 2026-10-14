@@ -48,6 +48,14 @@ export const BASE_STATS = {
   quotaMult: 1, // eclipse levels raise the quotas
   shopPrice: 1,
   bossHp: 1,
+  // 双六, items and the newer charms
+  diceFloor: 0, // minimum hold tier when choosing a sugoroku roll
+  lapBonus: 12, // medals for going round the sugoroku board
+  chestMult: 1,
+  darumaGold: 0,
+  bossDamage: 0, // extra damage per medal that hits a boss
+  freeExtra: 0, // extra shots that don't cost bank medals
+  nightChest: 0, // treasure chests dropped at the start of each night
 };
 
 // Once the night's medals are gone, up to EXTRA_DROPS more can be shot
@@ -90,8 +98,8 @@ export const BOSSES = {
   },
 };
 
-// Damage a medal deals to a boss, by kind (silver, gold, ball, oban).
-export const BOSS_DAMAGE = [1, 3, 6, 8];
+// Damage a medal deals to a boss, by kind (silver, gold, ball, koban, daruma, chest).
+export const BOSS_DAMAGE = [1, 3, 6, 8, 6, 6];
 
 export const ENEMIES = {
   oni: {
@@ -141,6 +149,7 @@ export const OMENS = [
   { id: 'drought', name: '日照り', good: false, desc: '今夜のメダル −4枚。', apply: (s) => { s.dropsPerNight -= 4; } },
   { id: 'sleepy', name: '眠り箱', good: false, desc: 'お賽銭箱の動きが鈍い (×0.7)。', apply: (s) => { s.boxSpeed *= 0.7; } },
   { id: 'festival', name: '縁日', good: true, desc: 'お賽銭箱が大きい (×1.25)。', apply: (s) => { s.boxWidth *= 1.25; } },
+  { id: 'treasure', name: '宝船', good: true, desc: '夜のはじめに宝箱がひとつ台に流れてくる。', apply: (s) => { s.nightChest += 1; } },
 ];
 
 // Charms persist for the whole run. `seal` is the single character stamped
@@ -170,6 +179,16 @@ export const CHARMS = [
   { id: 'hako', name: '大きな賽銭箱', seal: '箱', rarity: 2, price: 8, desc: 'お賽銭箱の幅 ×1.35。', apply: (s) => { s.boxWidth *= 1.35; } },
   { id: 'idaten', name: '韋駄天', seal: '速', rarity: 1, price: 5, desc: 'お賽銭箱の速さ ×1.5。', apply: (s) => { s.boxSpeed *= 1.5; } },
   { id: 'matsuri', name: '祭囃子', seal: '囃', rarity: 2, price: 7, desc: 'フィーバーの回転数 +3。', apply: (s) => { s.feverSpins += 3; } },
+  { id: 'saikoro', name: '天狗の賽', seal: '賽', rarity: 2, price: 7, desc: '双六でサイコロを2回振り、良い方の目で進む。', apply: (s) => { s.diceFloor = Math.max(s.diceFloor, 1); } },
+  { id: 'waraji', name: '旅の草鞋', seal: '鞋', rarity: 1, price: 5, desc: '双六で一周したときのご褒美 +15枚。', apply: (s) => { s.lapBonus += 15; } },
+  { id: 'chizu', name: '宝の地図', seal: '図', rarity: 2, price: 7, desc: '宝箱の中身が2倍。', apply: (s) => { s.chestMult *= 2; } },
+  { id: 'koboshi', name: '起き上がり小法師', seal: '法', rarity: 1, price: 5, desc: 'だるまがお賽銭箱に入ると金メダル3枚も降る。', apply: (s) => { s.darumaGold += 3; } },
+  { id: 'suzuo', name: '鈴の緒', seal: '緒', rarity: 2, price: 7, desc: '鳥居の鈴が小さくなり、鳥居を抜けやすい。', apply: (s) => { s.bellRadius = Math.max(0.14, s.bellRadius - 0.1); } },
+  { id: 'hamaya', name: '破魔矢', seal: '矢', rarity: 1, price: 5, desc: 'ボスに当たったメダルのダメージ +1。', apply: (s) => { s.bossDamage += 1; } },
+  { id: 'kitsune', name: '狐の面', seal: '狐', rarity: 2, price: 7, desc: '25秒ごとに金メダルがステージに現れる。', apply: (s) => { s.foxfire = s.foxfire ? Math.max(10, s.foxfire - 8) : 25; } },
+  { id: 'hyoutan', name: '瓢箪', seal: '瓢', rarity: 1, price: 5, desc: '追加投入のうち3回ぶんは持ちメダルを使わない。', apply: (s) => { s.freeExtra += 3; } },
+  { id: 'takarabune', name: '宝船の絵', seal: '船', rarity: 3, price: 10, desc: '毎晩はじめに宝箱がひとつ台に流れてくる。', apply: (s) => { s.nightChest += 1; } },
+  { id: 'koi', name: '鯉のぼり', seal: '鯉', rarity: 2, price: 8, desc: 'お賽銭箱の幅 +0.4、速さ ×1.2。', apply: (s) => { s.boxWidth += 0.4; s.boxSpeed *= 1.2; } },
 ];
 
 export const TALISMANS = [
@@ -179,8 +198,37 @@ export const TALISMANS = [
   { id: 'ball', name: '月玉札', seal: '玉', price: 5, desc: '月玉を1つ落とす。お賽銭箱に入れば大当たり。' },
   { id: 'rain', name: '雨乞札', seal: '雨', price: 5, desc: 'メダル15枚の雨を降らせる。' },
   { id: 'double', name: '倍札', seal: '倍', price: 5, desc: '20秒間、払い出しが2倍。' },
-  { id: 'spin', name: '回札', seal: '回', price: 3, desc: 'スロットの保留を3つ追加。' },
+  { id: 'spin', name: '回札', seal: '回', price: 3, desc: '抽選の保留を3つ追加。' },
   { id: 'fever', name: '祭札', seal: '祭', price: 7, desc: 'その場でフィーバー突入。' },
+  { id: 'chest', name: '宝箱札', seal: '宝', price: 6, desc: '宝箱をひとつ台に落とす。お賽銭箱に入れば中身がもらえる。' },
+  { id: 'daruma', name: 'だるま札', seal: '達', price: 4, desc: 'だるまをひとつ台に落とす。お賽銭箱に入ればお札が増える。' },
+  { id: 'bell', name: '鈴止め札', seal: '鈴', price: 4, desc: '20秒間、鳥居の鈴を脇へ寄せて止める。' },
+  { id: 'hamaya', name: '破魔矢札', seal: '破', price: 5, desc: 'ボスに12ダメージ。ボスがいない夜は金メダル2枚。' },
+];
+
+// 双六 (sugoroku) board, played instead of the slot when chosen. Each hold
+// rolls a die; better hold lamps pick the best of several rolls. Square 0 is
+// the start: passing it pays a lap bonus. 祭 and 大当 only open for a red or
+// better hold.
+export const BOARD_SQUARES = {
+  start: { label: '上り', color: '#ffd27a' },
+  medal: { label: '銭2', color: '#c9d2e8', value: 2 },
+  rest: { label: '休', color: '#5a5470', value: 0 },
+  gold: { label: '金', color: '#f0c96a', value: 3 },
+  sakura: { label: '桜', color: '#f4a3b8', value: 1.5 },
+  back: { label: '戻2', color: '#8a7aa0', value: 1 },
+  fwd: { label: '進3', color: '#8fe0a8', value: 3 },
+  daruma: { label: '達磨', color: '#e2483a', value: 7 },
+  chest: { label: '宝箱', color: '#b07a46', value: 14 },
+  ball: { label: '月玉', color: '#fff3c4', value: 10 },
+  stock: { label: '保留', color: '#7fe3ff', value: 4 },
+  fever: { label: '祭', color: '#ff6b4a', value: 40, hot: true },
+  jackpot: { label: '大当', color: '#ffd34a', value: 60, hot: true },
+};
+export const BOARD = [
+  'start', 'medal', 'rest', 'gold', 'medal', 'sakura', 'daruma', 'rest', 'medal', 'back', 'stock', 'medal',
+  'rest', 'ball', 'medal', 'fwd', 'gold', 'rest', 'chest', 'medal', 'sakura', 'rest', 'fever', 'medal',
+  'back', 'daruma', 'medal', 'rest', 'gold', 'fwd', 'medal', 'stock', 'rest', 'jackpot', 'medal', 'rest',
 ];
 
 // Slot symbols, in reel order.

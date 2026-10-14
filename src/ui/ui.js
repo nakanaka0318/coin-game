@@ -111,9 +111,10 @@ export class UI {
     e.fireBtn.addEventListener('lostpointercapture', fireUp);
     e.fireBtn.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
+    e.boardBtn = h('button', { class: 'btn icon board-btn', title: '抽選をスロット/双六に切替 (B)', 'aria-label': '抽選の切替', onclick: () => this.on.toggleBoard() }, '双六');
     e.viewBtn = h('button', { class: 'btn icon', title: '視点切替 (V)', 'aria-label': '視点切替', onclick: () => this.on.view() }, '視');
     e.menuBtn = h('button', { class: 'btn icon', title: 'メニュー (Esc)', 'aria-label': 'メニュー', onclick: () => this.on.menu() }, '≡');
-    e.corner = h('div', { class: 'corner' }, e.viewBtn, e.menuBtn);
+    e.corner = h('div', { class: 'corner' }, e.boardBtn, e.viewBtn, e.menuBtn);
     r.append(e.corner);
 
     e.toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
@@ -214,6 +215,8 @@ export class UI {
       e.fever.textContent = `フィーバー 残り${v}`;
     });
     set('caughtVis', run, (v) => { e.caughtStat.hidden = !v; });
+    // The button names the mode it switches to.
+    set('boardMode', game.wantDice, (v) => { e.boardBtn.textContent = v ? 'スロ' : '双六'; });
     const b = game.boss;
     set('boss', b?.alive && game.phase === 'night' ? `${b.key}:${b.hp}/${b.maxHp}` : '', (v) => {
       e.bossBar.hidden = !v;
@@ -590,6 +593,8 @@ export class UI {
         h('li', {}, '手前の左右にあるピッチャーが、奥の狙いの位置 (金の輪) へ交互にメダルを撃つ。マウスやドラッグで狙いを左右に動かし、クリック/タップで発射、長押しで連射。', h('kbd', {}, '←'), h('kbd', {}, '→'), ' と ', h('kbd', {}, 'Space'), ' でも操作できる。スマホでは下の狙いバーと発射ボタンが使える。'),
         h('li', {}, 'メダルは揺れる釘を抜けてプッシャーへ。手前の縁から落ちて、下を動くお賽銭箱に入ったメダルだけが払い出し。箱を外すと没収。'),
         h('li', {}, '自分が撃ったメダルがゆっくり動く鳥居をくぐると液晶スロットの保留 (狐火などで出てきたメダルは数えない)。鳥居の前では鈴が大きく揺れていて、当たるとメダルが弾かれる。鈴が外れた瞬間を狙おう。保留ランプの色 (青・緑・赤・金・虹) が当たりの予感。7揃いでジャックポット、月揃いで月玉とフィーバー。'),
+        h('li', {}, '右下の「双六」ボタン (', h('kbd', {}, 'B'), ') で抽選を月兎双六に切り替えられる。保留ひとつでサイコロを振り、止まったマスの効果をもらう。一周するとご褒美。祭・大当のマスは赤保留以上でだけ開く。'),
+        h('li', {}, 'だるまや宝箱も台に落ちてくる。お賽銭箱に入れば、だるまはお札、宝箱はたくさんのメダルになる。'),
         h('li', {}, 'ボスの夜 (第4夜・第8夜) には着地点の上にボスが浮かぶ。狙いを合わせてメダルを当て、体力を削り切れば退治。生きている間は横取りや天狗風などで邪魔をしてくる。'),
         h('li', {}, '各夜には「今夜のメダル」と上納ノルマがある。今夜の払い出しがノルマに届けば、夜明けにノルマ分を持ちメダルから上納して次の夜へ。届かなければランは終わり。'),
         h('li', {}, `今夜のメダルを使い切ったら、持ちメダルを1枚ずつ使って${EXTRA_DROPS}回まで追加投入できる。ノルマに届かない夜の助けになる。最後の投入から数秒たつと夜が明ける。`),

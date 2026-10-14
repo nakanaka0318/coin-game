@@ -11,7 +11,7 @@ import {
   BASE_STATS, NIGHTS, BOSSES, OMENS, CHARMS, TALISMANS, SYMBOLS, SLOT_TABLE, FEVER_TABLE,
   OUTCOME_TIER, LAMP_COLORS, LAMP_WEIGHTS, PRESENTATION_WEIGHTS, RARITY_WEIGHT,
   EXTRA_DROPS, SHRINE, shardsFor, ENEMIES, BOSS_DAMAGE, ECLIPSES, ECLIPSE_MAX, ECLIPSE_TANUKI,
-  ECLIPSE_CURSE, eclipseShardMult,
+  ECLIPSE_CURSE, eclipseShardMult, BOARD, BOARD_SQUARES,
 } from './data.js';
 import { makeRng } from './rng.js';
 
@@ -20,6 +20,7 @@ const FLAG_FLIGHT = 2; // lobbed by a pitcher, not yet landed
 const FLAG_CAUGHT = 4; // landed in the offering box
 const FLAG_HIT = 8; // already struck the boss
 const FLAG_PLAYER = 16; // shot from a pitcher; only these count at the torii
+const isCoin = (k) => k === KIND.SILVER || k === KIND.GOLD || k === KIND.OBAN;
 const MAX_BODIES = 950;
 const GRACE_SECONDS = 8;
 const JP_BASE = 50;
@@ -77,8 +78,12 @@ export class Game {
     this.feverChain = 0;
     this.eclipse = 0; // 月蝕 level of the current run
     this.boss = null; // the boss night's enemy
+    // Holds play the slot or the 双六 board; the switch waits for the reels.
+    this.diceMode = false;
+    this.wantDice = false;
+    this.dice = { pos: 0, laps: 0, roll: 1, path: [], landing: null, hot: false };
     this.rain = [];
-    this.timers = { tremor: 0, foxfire: 0, double: 0, mallet: 0, refill: 0, cashback: 0 };
+    this.timers = { tremor: 0, foxfire: 0, double: 0, mallet: 0, refill: 0, cashback: 0, bell: 0 };
     this.night = null;
     this.nightIndex = 0;
     this.shop = null;
@@ -156,6 +161,8 @@ export class Game {
     this.rng = makeRng(seed);
     this.mode = 'run';
     this.eclipse = Math.max(0, Math.min(ECLIPSE_MAX, eclipse | 0));
+    this.dice.pos = 0;
+    this.dice.laps = 0;
     this._dismissBoss();
     this.bank = 5 + 5 * this.metaLevel('startBank');
     this.charms = [];
@@ -284,11 +291,14 @@ export class Game {
     this.timers.tremor = this.stats.tremor || 0;
     this.timers.foxfire = this.stats.foxfire || 0;
     this.timers.double = 0;
+    this.timers.bell = 0;
+    this.world.bellParked = false;
     this.pendingShot = false;
     this.cooldown = 0;
     this.phase = 'night';
     this._spawnBoss(boss?.enemy);
     if (this.stats.openingRain) this.queueRain(this.stats.openingRain, KIND.SILVER, 0.4);
+    for (let i = 0; i < this.stats.nightChest; i++) this.spawnItem(KIND.CHEST, 1 + i * 0.6);
     this.emit('nightStart', this.night);
   }
 
@@ -331,7 +341,7 @@ export class Game {
       const i = hits[j + 1];
       if (w.kind[i] < 0 || (w.flags[i] & FLAG_HIT)) continue;
       w.flags[i] |= FLAG_HIT;
-      const dmg = BOSS_DAMAGE[w.kind[i]] || 1;
+      const dmg = (BOSS_DAMAGE[w.kind[i]] || 1) + this.stats.bossDamage;
       b.hp = Math.max(0, b.hp - dmg);
       this.emit('bossHit', { dmg, hp: b.hp, max: b.maxHp, x: w.pos[i * 3], y: w.pos[i * 3 + 1], z: w.pos[i * 3 + 2] });
       if (b.hp <= 0) { this._defeatBoss(); return; }
@@ -542,7 +552,8 @@ export class Game {
   canFire() {
     if (this.mode === 'free') return this.phase === 'free' && this.bank > 0;
     const n = this.night;
-    return this.phase === 'night' && (n.dropsLeft > 0 || (this.bank > 0 && n.fromBank < EXTRA_DROPS));
+    const free = (n.fromBank || 0) < this.stats.freeExtra;
+    return this.phase === 'night' && (n.dropsLeft > 0 || ((this.bank > 0 || free) && n.fromBank < EXTRA_DROPS));
   }
 
   // What counts toward the quota: the night's payouts. Extra shots are paid
@@ -553,7 +564,9 @@ export class Game {
 
   extraDropsLeft() {
     const n = this.night;
-    return n ? Math.max(0, Math.min(EXTRA_DROPS - n.fromBank, this.bank)) : 0;
+    if (!n) return 0;
+    const free = Math.max(0, this.stats.freeExtra - n.fromBank);
+    return Math.max(0, Math.min(EXTRA_DROPS - n.fromBank, this.bank + free));
   }
 
   setAim(x) {
@@ -604,7 +617,11 @@ export class Game {
     const s = this.stats;
     if (this.mode === 'run') {
       if (this.night.dropsLeft > 0) this.night.dropsLeft -= 1;
-      else { this.bank -= 1; this.night.fromBank += 1; this._checkQuota(); }
+      else {
+        if (this.night.fromBank >= this.stats.freeExtra) this.bank -= 1;
+        this.night.fromBank += 1;
+        this._checkQuota();
+      }
       this.night.grace = GRACE_SECONDS;
       this.run.dropped += 1;
     } else {
@@ -660,6 +677,19 @@ export class Game {
       case 'double': this.timers.double = 20; break;
       case 'spin': for (let i = 0; i < 3; i++) this._addStock(true); break;
       case 'fever': this._startFever(); break;
+      case 'chest': this.spawnItem(KIND.CHEST); break;
+      case 'daruma': this.spawnItem(KIND.DARUMA); break;
+      case 'bell': this.timers.bell = 20; this.world.bellParked = true; break;
+      case 'hamaya':
+        if (this.boss?.alive) {
+          this.boss.hp = Math.max(0, this.boss.hp - 12);
+          const p = this.world.bossPos(this.boss.x);
+          this.emit('bossHit', { dmg: 12, hp: this.boss.hp, max: this.boss.maxHp, x: p.x, y: p.y, z: p.z });
+          if (this.boss.hp <= 0) this._defeatBoss();
+        } else {
+          for (let i = 0; i < 2; i++) this._pushRain({ at: this.world.time + i * 0.25, kind: KIND.GOLD, table: true });
+        }
+        break;
       default: break;
     }
   }
@@ -686,6 +716,12 @@ export class Game {
       w.impulse(i, r.range(-0.3, 0.3) * m, r.range(0.8, 1.6) * m, r.range(3.2, 5) * m);
     }
     this.emit('gust', {});
+  }
+
+  // Drop a daruma or treasure chest onto the pile, delay in seconds.
+  spawnItem(kind, delay = 0.2) {
+    this._pushRain({ at: this.world.time + delay, kind });
+    this.emit('item', { kind });
   }
 
   spawnBall() {
@@ -731,7 +767,10 @@ export class Game {
         const p = stagePoint(r.range(AIM.minX, AIM.maxX), LANDING.s, 0.6);
         w.spawn(d.kind, p.x, p.y, p.z, this._tilt(0.4));
       } else {
-        w.spawn(d.kind, r.range(RAIN.minX, RAIN.maxX), RAIN.y + r.range(0, 1.5), r.range(RAIN.minZ, RAIN.maxZ),
+        // Items drop near the middle so they don't wedge against a side wall.
+        const big = d.kind === KIND.DARUMA || d.kind === KIND.CHEST;
+        const x = big ? r.range(-3, 3) : r.range(RAIN.minX, RAIN.maxX);
+        w.spawn(d.kind, x, RAIN.y + r.range(0, 1.5), r.range(RAIN.minZ, big ? 1.2 : RAIN.maxZ),
           this._tilt(1.2), { x: 0, y: -4, z: 0 }, { x: r.range(-6, 6), y: r.range(-4, 4), z: r.range(-6, 6) });
       }
     }
@@ -829,6 +868,10 @@ export class Game {
     const t = this.timers;
     const s = this.stats;
     if (t.double > 0) t.double = Math.max(0, t.double - dt);
+    if (t.bell > 0) {
+      t.bell = Math.max(0, t.bell - dt);
+      this.world.bellParked = t.bell > 0;
+    }
     if (this.phase !== 'night' && this.phase !== 'free') return;
     if (s.tremor) {
       t.tremor -= dt;
@@ -896,7 +939,31 @@ export class Game {
     if (kind === KIND.BALL) return s.ballValue;
     if (kind === KIND.OBAN) return s.obanValue;
     if (kind === KIND.GOLD) return s.goldValue;
+    if (kind === KIND.DARUMA) return 8; // what the box AI thinks items are worth
+    if (kind === KIND.CHEST) return 16;
     return 1;
+  }
+
+  // A daruma or treasure chest landed in the box.
+  _itemPayout(kind, x) {
+    const s = this.stats;
+    const r = this.rng;
+    if (kind === KIND.DARUMA) {
+      // Five medals and a talisman, or five more if the talisman slots are full.
+      let talisman = null;
+      if (this.mode === 'run' && this.talismans.length < s.talismanSlots) {
+        talisman = r.pick(TALISMANS).id;
+        this.talismans.push(talisman);
+      }
+      this._credit(talisman ? 5 : 10, x, kind);
+      for (let i = 0; i < s.darumaGold; i++) this._pushRain({ at: this.world.time + 0.3 + i * 0.15, kind: KIND.GOLD });
+      this.emit('itemCaught', { kind, x, talisman });
+    } else {
+      const amount = Math.round((12 + r.int(19)) * s.chestMult);
+      this._credit(amount, x, kind);
+      for (let i = 0; i < 2; i++) this._pushRain({ at: this.world.time + 0.3 + i * 0.15, kind: KIND.GOLD });
+      this.emit('itemCaught', { kind, x, amount });
+    }
   }
 
   // Medals passing the torii, landing in the box, or lost in the pit.
@@ -930,6 +997,7 @@ export class Game {
         if (this.night) this.night.caught += 1;
         this.run.caught += 1;
         if (k === KIND.BALL) this._ballPayout(x, value);
+        else if (k === KIND.DARUMA || k === KIND.CHEST) this._itemPayout(k, x);
         else if (!this._oniSteals(value, x)) this._credit(value, x, k);
         continue;
       }
@@ -1005,7 +1073,7 @@ export class Game {
     const s = this.stats;
     if (this.night) this.night.missed += 1;
     this.run.missed += 1;
-    if (kind !== KIND.BALL && s.cashback && this.rng() < s.cashback) {
+    if (isCoin(kind) && s.cashback && this.rng() < s.cashback) {
       this.bank += 1;
       this.emit('cashback', { x });
     } else {
@@ -1015,7 +1083,7 @@ export class Game {
 
   _lost(x, z, kind) {
     const s = this.stats;
-    if (kind !== KIND.BALL && s.sideRefund && this.rng() < s.sideRefund) {
+    if (isCoin(kind) && s.sideRefund && this.rng() < s.sideRefund) {
       this.bank += 1;
       this.emit('refund', { x, z });
     } else {
@@ -1086,19 +1154,28 @@ export class Game {
     this.emit('fever', { spins: this.fever, first });
   }
 
+  // Choose slot or 双六 for the holds; takes effect once the current draw ends.
+  setBoardMode(dice) {
+    this.wantDice = !!dice;
+    if (!this.slot.spinning) this.diceMode = this.wantDice;
+  }
+
   _slotTick(dt) {
     const sl = this.slot;
     if (!sl.spinning) {
+      this.diceMode = this.wantDice;
       if (sl.pause > 0) { sl.pause -= dt; return; }
       const active = this.phase === 'night' || this.phase === 'free';
-      if (active && sl.queue.length > 0) this._startSpin();
+      const start = () => (this.diceMode ? this._startRoll() : this._startSpin());
+      if (active && sl.queue.length > 0) start();
       else if (active && this.fever > 0) {
         // Fever keeps the reels turning even without holds.
         sl.queue.push(this._rollEntry(true));
-        this._startSpin();
+        start();
       }
       return;
     }
+    if (sl.kind === 'dice') { this._rollTick(dt); return; }
     sl.t += dt;
     for (let i = 0; i < 3; i++) {
       if (!sl.stopped[i] && sl.t >= sl.stopAt[i]) {
@@ -1117,8 +1194,129 @@ export class Game {
     }
   }
 
+  // --- 双六 ------------------------------------------------------------------
+
+  _squareScore(index, hot) {
+    const sq = BOARD_SQUARES[BOARD[index % BOARD.length]];
+    if (sq.hot && !hot) return 0.5;
+    return sq.value ?? 0;
+  }
+
+  // A hold rolls the die. Better lamps (and 天狗の賽) roll more dice and keep
+  // the one landing on the best square; moon and 7 holds pick freely.
+  _startRoll() {
+    const sl = this.slot;
+    const r = this.rng;
+    const d = this.dice;
+    const entry = sl.queue.shift();
+    const inFever = this.fever > 0;
+    if (inFever) this.fever -= 1;
+    const tier = Math.max(entry.outcome ? OUTCOME_TIER[entry.outcome] : 0, this.stats.diceFloor);
+    const hot = tier >= 2;
+    const n = BOARD.length;
+    const candidates = tier >= 3 ? [1, 2, 3, 4, 5, 6] : Array.from({ length: tier + 1 }, () => 1 + r.int(6));
+    let roll = candidates[0];
+    for (const v of candidates) if (this._squareScore(d.pos + v, hot) > this._squareScore(d.pos + roll, hot)) roll = v;
+    // Path square by square, with one follow-up move for 進/戻 squares.
+    const path = [];
+    let pos = d.pos;
+    let laps = 0;
+    for (let i = 0; i < roll; i++) { pos = (pos + 1) % n; if (pos === 0) laps += 1; path.push(pos); }
+    const first = BOARD[pos];
+    if (first === 'fwd') for (let i = 0; i < 3; i++) { pos = (pos + 1) % n; if (pos === 0) laps += 1; path.push(pos); }
+    else if (first === 'back') for (let i = 0; i < 2; i++) { pos = (pos + n - 1) % n; path.push(pos); }
+    d.from = d.pos;
+    d.roll = roll;
+    d.path = path;
+    d.final = pos;
+    d.lapsGained = laps;
+    d.hot = hot;
+    d.boost = inFever ? 1.5 : 1;
+    sl.spinning = true;
+    sl.kind = 'dice';
+    sl.t = 0;
+    sl.color = entry.color;
+    sl.inFever = inFever;
+    sl.outcome = null;
+    d.tumble = inFever || sl.queue.length >= 3 ? 0.45 : 0.8;
+    d.step = inFever ? 0.09 : 0.14;
+    d.applied = false;
+    d.endAt = d.tumble + path.length * d.step + 0.55;
+    this.emit('diceRoll', { roll, color: entry.color, fever: inFever, hot });
+  }
+
+  _rollTick(dt) {
+    const sl = this.slot;
+    const d = this.dice;
+    const before = sl.t;
+    sl.t += dt;
+    const stepIndex = (t) => Math.floor((t - d.tumble) / d.step);
+    if (sl.t >= d.tumble) {
+      const i0 = before < d.tumble ? -1 : stepIndex(before);
+      const i1 = Math.min(d.path.length - 1, stepIndex(sl.t));
+      for (let i = i0 + 1; i <= i1; i++) {
+        d.pos = d.path[i];
+        this.emit('diceStep', { pos: d.pos });
+      }
+    }
+    if (!d.applied && sl.t >= d.tumble + d.path.length * d.step) {
+      d.applied = true;
+      d.pos = d.final;
+      if (d.lapsGained) this._lap(d.lapsGained);
+      this._applySquare(BOARD[d.final], d.hot, d.boost);
+    }
+    if (sl.t >= d.endAt) {
+      sl.spinning = false;
+      sl.kind = null;
+      sl.pause = this.fever > 0 ? 0.15 : 0.3;
+    }
+  }
+
+  _lap(count) {
+    const s = this.stats;
+    this.dice.laps += count;
+    this.queueRain(s.lapBonus * count, KIND.SILVER, 0.3);
+    this._pushRain({ at: this.world.time + 0.6, kind: KIND.GOLD });
+    this.emit('lap', { laps: this.dice.laps, amount: s.lapBonus * count });
+  }
+
+  _applySquare(type, hot, boost) {
+    const s = this.stats;
+    const sq = BOARD_SQUARES[type];
+    let detail = { type, label: sq.label, hot };
+    const goldRain = (n) => {
+      for (let i = 0; i < n; i++) this._pushRain({ at: this.world.time + 0.3 + i * 0.15, kind: KIND.GOLD });
+    };
+    switch (type) {
+      case 'medal': { const n = Math.round(2 * boost); this.queueRain(n, KIND.SILVER, 0.2); detail.amount = n; break; }
+      case 'gold': goldRain(boost > 1 ? 2 : 1); break;
+      case 'sakura':
+        if (this.mode === 'run' && this.night) { this.night.dropsLeft += 2; this.night.dropsTotal += 2; detail.drops = 2; }
+        else { this.queueRain(3, KIND.SILVER, 0.2); detail.amount = 3; }
+        break;
+      case 'daruma': this.spawnItem(KIND.DARUMA); break;
+      case 'chest': this.spawnItem(KIND.CHEST); break;
+      case 'ball': this.spawnBall(); break;
+      case 'stock': this._addStock(true); break;
+      case 'fever':
+        if (hot) this._startFever(); else { this.queueRain(3, KIND.SILVER, 0.2); detail.amount = 3; }
+        detail.opened = hot;
+        break;
+      case 'jackpot':
+        detail.opened = hot;
+        if (hot) { this._applyOutcome('seven'); return; }
+        this.queueRain(3, KIND.SILVER, 0.2);
+        detail.amount = 3;
+        break;
+      default: break;
+    }
+    if (s.winRain && type !== 'rest' && type !== 'back') this.queueRain(Math.round(s.winRain / 2), KIND.SILVER, 0.3);
+    this.emit('square', detail);
+  }
+
   _startSpin() {
     const sl = this.slot;
+    sl.kind = 'slot';
     const r = this.rng;
     const entry = sl.queue.shift();
     const inFever = this.fever > 0;
@@ -1258,6 +1456,7 @@ export class Game {
       fever: this.fever,
       eclipse: this.eclipse,
       boss: this.boss,
+      dice: { pos: this.dice.pos, laps: this.dice.laps },
       rng: this.rng.state(),
       rain: this.rain.length,
       // Medals resting in the box were already paid; restoring them would pay twice.
@@ -1283,6 +1482,8 @@ export class Game {
     this.feverChain = 0;
     this.fever = d.fever || 0;
     this.eclipse = d.eclipse || 0;
+    this.dice.pos = d.dice?.pos || 0;
+    this.dice.laps = d.dice?.laps || 0;
     this.rng.setState(d.rng || 1);
     this.slot.spinning = false;
     this.slot.queue = [];

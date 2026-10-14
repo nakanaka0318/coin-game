@@ -70,6 +70,33 @@ await step('dawn + shop buy + sell', async () => {
   await click('次の夜へ');
   await click('夜をはじめる');
 });
+await step('switch to sugoroku, roll, and switch back', async () => {
+  await page.locator('.board-btn').click();
+  const res = await page.evaluate(() => {
+    const g = window.__game;
+    for (let i = 0; i < 3; i++) g._addStock(true);
+    const from = g.dice.pos;
+    for (let i = 0; i < 900 && (g.slot.queue.length || g.slot.spinning); i++) { g.world.step(); g.update(1 / 60); }
+    return { dice: g.diceMode, moved: g.dice.pos !== from || g.dice.laps > 0 };
+  });
+  if (!res.dice || !res.moved) throw new Error(JSON.stringify(res));
+  await page.screenshot({ path: `${out}/f-dice.png` });
+  await page.locator('.board-btn').click();
+  const back = await page.evaluate(() => window.__game.wantDice);
+  if (back) throw new Error('did not switch back');
+});
+await step('treasure chest and daruma talismans', async () => {
+  const n = await page.evaluate(() => {
+    const g = window.__game;
+    g.talismans = ['chest', 'daruma'];
+    g.useTalisman(0); g.useTalisman(0);
+    for (let i = 0; i < 120; i++) { g.world.step(); g.update(1 / 60); }
+    let items = 0;
+    for (let i = 0; i < g.world.highWater; i++) if (g.world.kind[i] >= 4) items++;
+    return items;
+  });
+  if (n < 2) throw new Error(`items ${n}`);
+});
 await step('boss night: hit and defeat', async () => {
   await page.evaluate(() => { const g = window.__game; g.nightIndex = 3; g.startNight(); });
   await click('夜をはじめる');

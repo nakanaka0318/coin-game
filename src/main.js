@@ -86,11 +86,13 @@ const sparkles = new Sparkles(view.scene);
 
 const game = new Game(world, { emit: onGameEvent, initialField });
 game.meta = meta;
+game.setBoardMode(settings.board === 'dice');
 
 // --- UI ----------------------------------------------------------------------
 const ui = new UI(document.getElementById('ui'), {
   newRun: () => startRun(),
   setEclipse: (lv) => { settings.eclipse = lv; persist(); },
+  toggleBoard: () => toggleBoard(),
   continueRun: () => continueSaved(),
   freePlay: () => startFree(),
   backToTitle: () => showTitle(),
@@ -114,6 +116,14 @@ const ui = new UI(document.getElementById('ui'), {
     ctx.drawImage(img, 0, 0, c.width, c.height);
   },
 });
+
+function toggleBoard() {
+  settings.board = settings.board === 'dice' ? 'slot' : 'dice';
+  game.setBoardMode(settings.board === 'dice');
+  ui.toast(settings.board === 'dice' ? '双六モード ・ 保留ひとつでサイコロを振る' : 'スロットモード');
+  audio.click();
+  persist();
+}
 
 function applySettings(s, save = true) {
   Object.assign(settings, s);
@@ -240,7 +250,8 @@ function onGameEvent(type, d) {
     case 'landed': audio.landed(d.x); break;
     case 'payout': {
       const p = screenOf(world.boxX, BOX.floorY + BOX.height + 0.3, BOX.z);
-      const kind = d.kind === KIND.BALL ? 'ball' : d.kind === KIND.OBAN ? 'rainbow' : d.kind === KIND.GOLD ? 'gold' : '';
+      const big = d.kind === KIND.BALL || d.kind === KIND.DARUMA || d.kind === KIND.CHEST;
+      const kind = big ? 'ball' : d.kind === KIND.OBAN ? 'rainbow' : d.kind === KIND.GOLD ? 'gold' : '';
       ui.pop(`+${d.value}`, p.x + (Math.random() - 0.5) * 30, p.y, kind);
       if (kind === 'rainbow') {
         for (const color of [0xff5a5a, 0xffd34a, 0x6be08a, 0x5ab4ff, 0xc77dff]) {
@@ -400,6 +411,41 @@ function onGameEvent(type, d) {
       ui.showClear(game, d.shards, () => startRun(), () => { game.bank = Math.max(game.bank, 50); startFree(); }, () => showTitle(), () => openShrine());
       break;
     }
+    case 'diceRoll': audio.dice(); if (d.hot) cabinet.flash('#ff6b4a', 1.2); break;
+    case 'diceStep': audio.diceStep(); break;
+    case 'square': {
+      const SQUARE_TEXT = {
+        medal: () => `銭 ${d.amount}枚`, gold: () => '金メダル', sakura: () => (d.drops ? `今夜のメダル +${d.drops}` : `メダル ${d.amount}枚`),
+        daruma: () => 'だるまが落ちてくる', chest: () => '宝箱が落ちてくる', ball: () => '月玉が落ちてくる', stock: () => '保留 +1',
+        fever: () => (d.opened ? 'フィーバー!' : `惜しい! 銭 ${d.amount}枚`), jackpot: () => (d.opened ? '大当たり!' : `惜しい! 銭 ${d.amount}枚`),
+        rest: () => 'ひと休み', back: () => '', fwd: () => '',
+      };
+      const sub = SQUARE_TEXT[d.type]?.() || '';
+      if (d.type !== 'rest' && d.type !== 'back' && d.type !== 'fwd') {
+        lcd.message(d.label, { sub, color: '#ffd27a', seconds: 1.1 });
+        audio.win(d.type === 'chest' || d.type === 'daruma' ? 'star' : 'sakura');
+      }
+      break;
+    }
+    case 'lap':
+      lcd.message('一周!', { sub: `ご褒美 ${d.amount}枚`, color: '#8fe0a8', seconds: 1.6, big: true });
+      ui.toast(`双六を一周 (${d.laps}周目) ・ ${d.amount}枚`, 'good');
+      audio.quotaMet();
+      break;
+    case 'item': ui.toast(d.kind === KIND.CHEST ? '宝箱が落ちてきた! お賽銭箱で受けよう' : 'だるまが落ちてきた!', 'good'); break;
+    case 'itemCaught': {
+      const p = screenOf(world.boxX, BOX.floorY + BOX.height + 0.6, BOX.z);
+      if (d.kind === KIND.CHEST) {
+        ui.toast(`宝箱を開けた! ${d.amount}枚と金メダル2枚`, 'big');
+        lcd.message('宝箱', { sub: `${d.amount}枚`, color: '#ffd34a', seconds: 1.6, big: true });
+      } else {
+        ui.toast(d.talisman ? `だるま! ${talismanById[d.talisman].name}を授かった` : 'だるま! 10枚', 'big');
+      }
+      for (const color of [0xffd34a, 0xff5a3c, 0xffffff]) sparkles.burst(world.boxX, BOX.floorY + BOX.height, BOX.z, { count: 18, color, speed: 3, up: 5 });
+      ui.pop(d.kind === KIND.CHEST ? '宝' : '達', p.x, p.y - 30, 'ball');
+      cabinet.flash('#ffd34a', 1.2);
+      break;
+    }
     case 'bossSpawn': audio.bossSpawn(); break;
     case 'bossHit': {
       cabinet.bossHit();
@@ -508,6 +554,7 @@ addEventListener('keydown', (e) => {
   } else if (k === 'arrowleft' || k === 'a') input.keys.add('left');
   else if (k === 'arrowright' || k === 'd') input.keys.add('right');
   else if (k === 'v') view.cycleView();
+  else if (k === 'b') toggleBoard();
   else if (k === 'm') applySettings({ sound: !settings.sound });
   else if (['1', '2', '3'].includes(k)) game.useTalisman(Number(k) - 1);
 });

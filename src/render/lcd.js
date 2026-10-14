@@ -1,7 +1,7 @@
 // The backboard LCD: three slot reels, stock lamps, jackpot pool and
 // event messages, drawn on a canvas used as a texture.
 import * as THREE from 'three';
-import { SYMBOLS } from '../game/data.js';
+import { SYMBOLS, BOARD, BOARD_SQUARES } from '../game/data.js';
 import { makeCanvas, drawRabbit, drawMochiRabbit, PALETTE } from './textures.js';
 
 const W = 1024, H = 512;
@@ -171,7 +171,9 @@ export class LcdDisplay {
     this.time += dt;
     const sl = game.slot;
     const fever = game.fever > 0 || (sl.spinning && sl.inFever);
-    const animating = sl.spinning || fever || this.messages.length || game.timers.double > 0 || sl.queue.some((e) => e.color !== 'white');
+    const animating = sl.spinning || fever || this.messages.length || game.timers.double > 0 || sl.queue.some((e) => e.color !== 'white')
+      || game.diceMode !== this.lastDice;
+    this.lastDice = game.diceMode;
     this._idleT = (this._idleT || 0) + dt;
     if (!animating && !this.dirty && this._idleT < 0.25) return;
     const frameDt = this._idleT;
@@ -179,6 +181,12 @@ export class LcdDisplay {
     this.dirty = false;
     const ctx = this.ctx;
     const t = this.time;
+    if (sl.kind === 'dice' || (game.diceMode && !sl.spinning)) {
+      this._drawBoard(ctx, t, game, fever);
+      this._messages(ctx, t);
+      this.texture.needsUpdate = true;
+      return;
+    }
     const pres = sl.spinning ? sl.presentation : null;
     const crawling = (pres === 'super' || pres === 'revival') && sl.stopped[1] && !sl.stopped[2];
 
@@ -290,6 +298,123 @@ export class LcdDisplay {
       ctx.font = `400 30px ${DISPLAY}`;
       ctx.fillStyle = 'rgba(255,240,210,0.75)';
       ctx.fillText('鳥居をくぐれば抽選', W - 36, 48);
+    }
+  }
+
+  // --- 双六 board ---------------------------------------------------------------
+
+  _squareRect(i) {
+    const cw = W / 12, top = 6, rowH = 72, ch = 58;
+    if (i < 12) return { x: i * cw, y: top, w: cw, h: rowH };
+    if (i < 18) return { x: W - cw, y: 82 + (i - 12) * ch, w: cw, h: ch };
+    if (i < 30) return { x: W - (i - 18 + 1) * cw, y: 434, w: cw, h: rowH };
+    return { x: 0, y: 430 - (i - 30 + 1) * ch, w: cw, h: ch };
+  }
+
+  _drawBoard(ctx, t, game, fever) {
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, fever ? '#3a0a10' : '#0b2a1f');
+    bg.addColorStop(1, fever ? '#6a2a08' : '#14381c');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    const sl = game.slot;
+    const d = game.dice;
+    const hotHold = sl.kind === 'dice' && d.hot;
+    // Squares
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < BOARD.length; i++) {
+      const sq = BOARD_SQUARES[BOARD[i]];
+      const r = this._squareRect(i);
+      ctx.fillStyle = sq.color;
+      ctx.globalAlpha = sq.hot && !hotHold ? 0.55 : 0.92;
+      ctx.beginPath();
+      ctx.roundRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, 8);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (sq.hot) {
+        ctx.strokeStyle = hotHold ? `hsl(${(t * 300) % 360},90%,65%)` : 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+      ctx.fillStyle = ['rest', 'back', 'daruma', 'chest', 'fever'].includes(BOARD[i]) ? '#fff8ec' : '#1b1424';
+      ctx.font = `400 ${sq.label.length > 1 ? 24 : 30}px ${DISPLAY}`;
+      ctx.fillText(sq.label, r.x + r.w / 2, r.y + r.h / 2 + 2);
+    }
+    // Piece: the moon rabbit hops from square to square.
+    const r = this._squareRect(d.pos);
+    const hop = sl.kind === 'dice' && sl.t > d.tumble ? Math.abs(Math.sin(((sl.t - d.tumble) / d.step) * Math.PI)) * 14 : 0;
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffffff';
+    drawRabbit(ctx, r.x + r.w / 2, r.y + r.h / 2 - 4 - hop, 52, { eye: true });
+    ctx.restore();
+    // Centre: title, jackpot pool, die and holds.
+    ctx.textAlign = 'left';
+    ctx.font = `400 40px ${DISPLAY}`;
+    ctx.fillStyle = '#ffd27a';
+    ctx.fillText('月兎双六', 116, 124);
+    ctx.font = `400 22px ${DISPLAY}`;
+    ctx.fillStyle = PALETTE.vermilion;
+    ctx.fillText('JACKPOT', 118, 172);
+    ctx.font = `400 40px ${DIGITAL}`;
+    ctx.fillStyle = '#ffe7a3';
+    ctx.fillText(String(game.jpPool).padStart(4, '0'), 228, 172);
+    ctx.font = `400 22px ${DISPLAY}`;
+    ctx.fillStyle = 'rgba(255,240,210,0.8)';
+    ctx.fillText(`${d.laps}周`, 118, 214);
+    ctx.font = `400 20px ${DISPLAY}`;
+    ctx.fillStyle = 'rgba(255,240,210,0.6)';
+    ctx.fillText('赤保留以上で 祭・大当 が開く', 118, 252);
+    if (fever) {
+      ctx.textAlign = 'right';
+      ctx.font = `400 34px ${DISPLAY}`;
+      ctx.fillStyle = Math.floor(t * 6) % 2 ? '#ffd34a' : '#ff6b4a';
+      ctx.fillText(`フィーバー 残り${game.fever}`, W - 116, 124);
+    }
+    // Die
+    const tumbling = sl.kind === 'dice' && sl.t < d.tumble;
+    const face = tumbling ? 1 + (Math.floor(t * 18) % 6) : d.roll || 1;
+    const cx = W / 2 + 150, cy = 228, s = 120;
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (tumbling) ctx.rotate(Math.sin(t * 20) * 0.4);
+    ctx.fillStyle = '#fff8ec';
+    ctx.shadowColor = sl.kind === 'dice' ? this._lampColor(sl.color, t) : 'rgba(0,0,0,0)';
+    ctx.shadowBlur = 26;
+    ctx.beginPath();
+    ctx.roundRect(-s / 2, -s / 2, s, s, 18);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    const pips = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+      5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] }[face];
+    for (const [px, py] of pips) {
+      ctx.fillStyle = face === 1 ? '#d9452e' : '#1b1424';
+      ctx.beginPath();
+      ctx.arc(px * s * 0.27, py * s * 0.27, face === 1 ? s * 0.13 : s * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    // Holds
+    const q = sl.queue;
+    const max = Math.max(4, game.stats.stockMax, q.length);
+    const gap = Math.min(46, 560 / max);
+    const x0 = W / 2 - ((max - 1) * gap) / 2;
+    for (let i = 0; i < max; i++) {
+      const e = q[i];
+      ctx.beginPath();
+      ctx.arc(x0 + i * gap, 380, Math.min(15, gap * 0.34), 0, Math.PI * 2);
+      if (e) {
+        const col = this._lampColor(e.color, t);
+        ctx.fillStyle = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = e.color === 'white' ? 8 : 22;
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      }
+      ctx.fill();
+      ctx.shadowBlur = 0;
     }
   }
 

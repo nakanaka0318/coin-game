@@ -1,12 +1,12 @@
 // Rapier wrapper for the medal pusher. Runs in the browser and in Node
 // (tools/sim-test.mjs drives it headlessly for tuning).
 import {
-  COIN, GOLD_COIN, OBAN, BALL, WORLD, PUSHER, MAT, STAGE, BOX, HALF_W,
+  COIN, GOLD_COIN, OBAN, BALL, DARUMA, CHEST, WORLD, PUSHER, MAT, STAGE, BOX, HALF_W,
   PIN_MOTION, TORII_MOTION, BELL, BOSS, stagePoint, stagePins,
 } from './config.js';
 import { buildMachineParts, checkerPostPos, quatX, CHECKER_POST_S } from './machine.js';
 
-export const KIND = { SILVER: 0, GOLD: 1, BALL: 2, OBAN: 3 };
+export const KIND = { SILVER: 0, GOLD: 1, BALL: 2, OBAN: 3, DARUMA: 4, CHEST: 5 };
 
 const COIN_SPECS = { [KIND.SILVER]: COIN, [KIND.GOLD]: GOLD_COIN, [KIND.OBAN]: OBAN };
 
@@ -58,6 +58,7 @@ export class PhysicsWorld {
     this.bellX = 0;
     this.bellSpeed = 1;
     this.bellRadius = BELL.radius;
+    this.bellParked = false;
     this.bossX = 0;
     this.bossOn = false;
     this._moverT = 0;
@@ -256,7 +257,10 @@ export class PhysicsWorld {
     this.box.setNextKinematicTranslation({ x: this.boxTargetX, y: BOX.floorY, z: BOX.z });
     this.boxX = this.boxTargetX;
     // The bell swings like a pendulum hung from the torii's top beam.
-    this.bellX = this.toriiX + BELL.amp * Math.sin(2 * Math.PI * t * this.bellSpeed / BELL.period);
+    // A 鈴止め talisman parks the bell to one side.
+    this.bellX = this.bellParked
+      ? this.toriiX + BELL.amp * 1.15
+      : this.toriiX + BELL.amp * Math.sin(2 * Math.PI * t * this.bellSpeed / BELL.period);
     this.bell.setNextKinematicTranslation(this._bellPos());
     if (this.bossOn) this.boss.setNextKinematicTranslation(this.bossPos());
   }
@@ -291,6 +295,14 @@ export class PhysicsWorld {
       desc.setLinearDamping(0.05).setAngularDamping(0.4);
       cdesc = R.ColliderDesc.ball(BALL.radius).setDensity(BALL.density)
         .setFriction(BALL.friction).setRestitution(BALL.restitution);
+    } else if (kind === KIND.DARUMA) {
+      desc.setLinearDamping(0.1).setAngularDamping(0.8);
+      cdesc = R.ColliderDesc.ball(DARUMA.radius).setDensity(DARUMA.density)
+        .setFriction(DARUMA.friction).setRestitution(DARUMA.restitution);
+    } else if (kind === KIND.CHEST) {
+      desc.setLinearDamping(0.1).setAngularDamping(0.5);
+      cdesc = R.ColliderDesc.cuboid(CHEST.half[0], CHEST.half[1], CHEST.half[2]).setDensity(CHEST.density)
+        .setFriction(CHEST.friction).setRestitution(CHEST.restitution);
     } else {
       const spec = COIN_SPECS[kind];
       desc.setLinearDamping(COIN.linearDamping).setAngularDamping(COIN.angularDamping);
@@ -435,7 +447,8 @@ export class PhysicsWorld {
 
   _matOfSlot(slot) {
     const k = this.kind[slot];
-    return k === KIND.GOLD || k === KIND.OBAN ? MAT.GOLD : k === KIND.BALL ? MAT.BALL : MAT.COIN;
+    if (k === KIND.CHEST) return MAT.WOOD;
+    return k === KIND.GOLD || k === KIND.OBAN ? MAT.GOLD : k === KIND.BALL || k === KIND.DARUMA ? MAT.BALL : MAT.COIN;
   }
 
   // --- save / load --------------------------------------------------------

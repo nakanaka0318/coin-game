@@ -596,3 +596,84 @@ export function makeBossFace(key) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+
+// Daruma skin for a sphere: red lacquer, a white face with one painted eye,
+// and a gold 福 on the back.
+export function makeDarumaTexture(w = 512, h = 256) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#e8402c');
+  g.addColorStop(1, '#9a1a10');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  // Gold trim around the face and belly.
+  ctx.strokeStyle = '#f0c96a';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.ellipse(w * 0.25, h * 0.47, 78, 62, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Face
+  ctx.fillStyle = '#f6eed8';
+  ctx.beginPath();
+  ctx.ellipse(w * 0.25, h * 0.47, 72, 56, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1b1424';
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(w * 0.25 + s * 30, h * 0.44, 15, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#1b1424';
+    ctx.beginPath();
+    ctx.moveTo(w * 0.25 + s * 10, h * 0.3);
+    ctx.quadraticCurveTo(w * 0.25 + s * 40, h * 0.22, w * 0.25 + s * 58, h * 0.32);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#f6eed8';
+  ctx.beginPath();
+  ctx.ellipse(w * 0.25 + 30, h * 0.44, 8, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#1b1424';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(w * 0.25 - 26, h * 0.62);
+  ctx.quadraticCurveTo(w * 0.25, h * 0.7, w * 0.25 + 26, h * 0.62);
+  ctx.stroke();
+  // 福 on the back
+  ctx.fillStyle = '#f0c96a';
+  ctx.font = `900 ${h * 0.42}px "Dela Gothic One", "Hiragino Mincho ProN", serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('福', w * 0.75, h * 0.55);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Treasure chest side: dark red lacquer with gold bands and a lock plate.
+export function makeChestTexture(size = 256, lock = false) {
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#6e1a14';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let y = 0; y < size; y += 16) ctx.fillRect(0, y, size, 2);
+  ctx.fillStyle = '#e0b04a';
+  ctx.fillRect(0, 0, size, size * 0.08);
+  ctx.fillRect(0, size * 0.92, size, size * 0.08);
+  ctx.fillRect(size * 0.18, 0, size * 0.1, size);
+  ctx.fillRect(size * 0.72, 0, size * 0.1, size);
+  if (lock) {
+    ctx.fillStyle = '#ffd96a';
+    ctx.fillRect(size * 0.4, size * 0.3, size * 0.2, size * 0.32);
+    ctx.fillStyle = '#3a1a08';
+    ctx.beginPath();
+    ctx.arc(size * 0.5, size * 0.42, size * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(size * 0.49, size * 0.43, size * 0.02, size * 0.1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

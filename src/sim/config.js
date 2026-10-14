@@ -27,6 +27,11 @@ export const OBAN = {
   density: 1.2,
 };
 
+// Items that roll and tumble on the field: a daruma (heavy ball) and a
+// treasure chest (box). Caught in the offering box they pay something special.
+export const DARUMA = { radius: 0.42, density: 1.6, friction: 0.5, restitution: 0.15 };
+export const CHEST = { half: [0.5, 0.3, 0.38], density: 0.9, friction: 0.55, restitution: 0.05 };
+
 export const BALL = {
   radius: 0.62,
   density: 1.4,

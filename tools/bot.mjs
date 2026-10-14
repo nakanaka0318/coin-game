@@ -28,6 +28,7 @@ export function makeGame(seed, { field = initialField } = {}) {
     emit: (type) => { counters[type] = (counters[type] || 0) + 1; },
   });
   game.meta = metaFromEnv();
+  if (process.env.DICE === '1') game.setBoardMode(true); // play holds on the 双六 board
   if (process.env.BOXK) game.boxSharp = Number(process.env.BOXK);
   return { world, game, counters };
 }
