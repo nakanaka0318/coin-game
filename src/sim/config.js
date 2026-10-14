@@ -63,17 +63,19 @@ export const PUSHER = {
   friction: 0.32,
 };
 
+// The inclined stage: medals land here, bounce through pins and fall
+// onto the pusher table over the lip. It sits low, close to the medal field.
+const STAGE_TOP = { z: -11.6, y: 4.85 };
+const STAGE_LIP = { z: -6.9, y: 2.0 };
+// How far the stage (and the backboard above it) sits below its original height.
+export const STAGE_LOWER = 6.25 - STAGE_TOP.y;
+
 export const BACK_WALL = {
   front: -7.0,
   back: -7.8,
   bottom: PUSHER.height + 0.03,
-  top: 3.3,
+  top: STAGE_LIP.y - 0.1,
 };
-
-// The inclined stage: medals land here, bounce through pins and fall
-// onto the pusher table over the lip.
-const STAGE_TOP = { z: -11.6, y: 6.25 };
-const STAGE_LIP = { z: -6.9, y: 3.4 };
 export const STAGE = {
   top: STAGE_TOP,
   lip: STAGE_LIP,

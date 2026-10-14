@@ -3,7 +3,7 @@
 // meshes match what the physics sees.
 import * as THREE from 'three';
 import {
-  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD, BOSS, FLIGHT,
+  HALF_W, FRONT_Z, SIDE_WALL_END_Z, PUSHER, STAGE, BACK_WALL, BOX, PITCHER, LANDING, WORLD, BOSS, FLIGHT, STAGE_LOWER,
   stagePoint,
 } from '../sim/config.js';
 import { checkerPostPos, quatX, CHECKER_POST_S } from '../sim/machine.js';
@@ -337,7 +337,7 @@ export class Cabinet {
       this.lamps.push({ mesh: stripe, base: new THREE.Color(0xff5a3c), kind: 'stripe' });
       // Wall top LED strip.
       const strip = add(new THREE.BoxGeometry(0.1, 0.08, 14.6),
-        new THREE.MeshBasicMaterial({ color: 0xf0c96a }), [side * (HALF_W + 0.02), 9.05, -6.7], { receive: false });
+        new THREE.MeshBasicMaterial({ color: 0xf0c96a }), [side * (HALF_W + 0.02), 9.05 - STAGE_LOWER, -6.7], { receive: false });
       this.lamps.push({ mesh: strip, base: new THREE.Color(0xf0c96a), kind: 'strip' });
     }
     // Front edge trim.
@@ -353,9 +353,9 @@ export class Cabinet {
     rail.rotation.z = Math.PI / 2;
     add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 0.25, 0.25), m.lacquerDark, [0, -0.85, FRONT_Z - 0.05]);
     // Roof with the title sign.
-    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 1.6, 4), m.lacquerDark, [0, 13.6, -11.6]);
+    add(new THREE.BoxGeometry(HALF_W * 2 + 2.7, 1.6, 4), m.lacquerDark, [0, 13.6 - STAGE_LOWER, -11.6]);
     const sign = add(new THREE.PlaneGeometry(HALF_W * 2 + 1, 1.25),
-      new THREE.MeshBasicMaterial({ map: this._signTexture(), toneMapped: false }), [0, 13.6, -9.58], { receive: false });
+      new THREE.MeshBasicMaterial({ map: this._signTexture(), toneMapped: false }), [0, 13.6 - STAGE_LOWER, -9.58], { receive: false });
     this.sign = sign;
   }
 
@@ -567,7 +567,7 @@ export class Cabinet {
     const m = this.mats;
     const z = STAGE.top.z + 0.01;
     // LCD screen in a gold frame.
-    const w = 7.4, h = 3.7, cy = 8.65;
+    const w = 7.4, h = 3.7, cy = 8.65 - STAGE_LOWER;
     const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, h + 0.5, 0.25), m.gold);
     frame.position.set(0, cy, z + 0.05);
     this.group.add(frame);
@@ -578,7 +578,7 @@ export class Cabinet {
     // Moon above the screen.
     this.moonMat = new THREE.MeshBasicMaterial({ map: makeMoon(), transparent: true, toneMapped: false, color: 0xdddddd });
     this.moon = new THREE.Mesh(new THREE.CircleGeometry(1.6, 64), this.moonMat);
-    this.moon.position.set(0, 11.75, z + 0.12);
+    this.moon.position.set(0, 11.75 - STAGE_LOWER, z + 0.12);
     this.group.add(this.moon);
     const halo = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.4, 64),
       new THREE.MeshBasicMaterial({ color: 0xffd89a, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
@@ -596,14 +596,14 @@ export class Cabinet {
       const mat = new THREE.MeshStandardMaterial({ map: makeLantern(ch), emissive: 0xff5a30, emissiveIntensity: 0.5, roughness: 0.8 });
       mat.emissiveMap = mat.map;
       const l = new THREE.Mesh(lanternGeo, mat);
-      l.position.set(x, 11.6, z + 0.9);
+      l.position.set(x, 11.6 - STAGE_LOWER, z + 0.9);
       l.rotation.y = Math.PI / 2 + 0.25 * Math.sign(-x);
       this.group.add(l);
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.12, 16), m.black);
-      cap.position.set(x, 12.22, z + 0.9);
+      cap.position.set(x, 12.22 - STAGE_LOWER, z + 0.9);
       this.group.add(cap);
       const cap2 = cap.clone();
-      cap2.position.y = 10.98;
+      cap2.position.y = 10.98 - STAGE_LOWER;
       this.group.add(cap2);
       this.lanterns.push({ mesh: l, mat, phase: i * 1.3 });
     });

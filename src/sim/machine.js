@@ -56,7 +56,7 @@ export function buildMachineParts() {
   box('stage', [c.x, c.y, c.z], [HALF_W, STAGE.thickness / 2, STAGE.length / 2 + ext / 2], { quat: q, friction: STAGE.friction, mat: MAT.METAL, slick: true });
 
   // Back board behind the stage.
-  box('stageBack', [0, 8.5, STAGE.top.z - 0.4], [HALF_W, 4.5, 0.4], { mat: MAT.WOOD, friction: 0.05, slick: true });
+  box('stageBack', [0, STAGE.top.y + 2.25, STAGE.top.z - 0.4], [HALF_W, 4.5, 0.4], { mat: MAT.WOOD, friction: 0.05, slick: true });
 
   // Pins and the torii posts are kinematic movers built in physics.js.
 

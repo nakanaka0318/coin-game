@@ -5,21 +5,22 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeBackdrop } from './textures.js';
+import { STAGE_LOWER } from '../sim/config.js';
 
 // Camera presets: target point, elevation (deg), extent that must fit on
 // screen (width, height in world units around the target). A `span` preset
 // instead names the top and bottom points that must fit, and is solved for
 // the current screen.
 const VIEWS = {
-  overview: { span: [[0, 11.4, -11.5], [0, -3.3, 6.0]], elev: 38, width: 16.8, yaw: 0 },
+  overview: { span: [[0, 11.4 - STAGE_LOWER, -11.5], [0, -3.3, 6.0]], elev: 38, width: 16.8, yaw: 0 },
   field: { target: [0, -0.6, 1.4], elev: 46, width: 15, height: 13.5, yaw: 0 },
-  stage: { target: [0, 5.2, -8.4], elev: 24, width: 14, height: 11, yaw: 0 },
+  stage: { target: [0, 5.2 - STAGE_LOWER, -8.4], elev: 24, width: 14, height: 11, yaw: 0 },
 };
 // With touch controls the overview frames just the play area, from the top of
 // the LCD down to the offering box; the sign above it can sit behind the HUD.
 const TOUCH_VIEWS = {
   ...VIEWS,
-  overview: { span: [[0, 10.75, -11.5], [0, -3.2, 5.95]], elev: 38, width: 16.8, yaw: 0 },
+  overview: { span: [[0, 10.75 - STAGE_LOWER, -11.5], [0, -3.2, 5.95]], elev: 38, width: 16.8, yaw: 0 },
 };
 
 // Solves the target and distance that fit a view's two span points inside the
